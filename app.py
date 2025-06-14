@@ -102,6 +102,11 @@ TOOL_FUNCS = {"write_file": write_file, "read_file": read_file, "write_command":
 @app.route("/")
 def index(): return render_template("index.html")
 
+@app.route("/api/history")
+def history():
+    """Return full conversation history."""
+    return jsonify(HISTORY)
+
 @app.route("/api/chat", methods=["POST"])
 def chat():
     data      = request.json
