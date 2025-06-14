@@ -38,7 +38,12 @@ main{
   /* show default scrollbars */
   .pane::-webkit-scrollbar{display:block}
 .term{font-family:monospace;white-space:pre-wrap;background:#000}
-.bubble{max-width:80%;margin:.4rem 0;padding:.6rem;border-radius:8px}
+.bubble{
+  width:100%;
+  margin:.4rem 0;
+  padding:.6rem;
+  border-radius:8px
+}
 .ai   {background:rgba(56,189,248,.15)}
 .user {align-self:flex-end;background:rgba(240,171,252,.2)}
 .code {color:var(--term)}
