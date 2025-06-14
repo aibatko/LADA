@@ -26,9 +26,12 @@ async function post(url, body){
 }
 
 function bubble(text, cls, pane){
-  const d=document.createElement("div");
-  d.className=`bubble ${cls}`; d.textContent=text; pane.append(d);
-  pane.scrollTop = pane.scrollHeight;
+  const d = document.createElement("div");
+  d.className = `bubble ${cls}`;
+  d.textContent = text;
+  pane.append(d);
+  /* wait till the element is rendered, then jump to bottom */
+  requestAnimationFrame(()=>{ pane.scrollTop = pane.scrollHeight; });
 }
 
 /* ---------- CHAT ---------- */
