@@ -5,7 +5,7 @@
 }
 *{box-sizing:border-box}
 body{
-  margin:0; height:100vh; display:grid;
+  margin:0; height:100vh; display:grid; overflow:hidden;
   grid-template-rows:auto 1fr auto;
   background:linear-gradient(135deg,var(--bg1),var(--bg2)); color:var(--msg); font-family:system-ui;
 }
