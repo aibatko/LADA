@@ -28,13 +28,14 @@ def get_client(provider: str):
         return OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
     return OpenAI()
 
-SAFE_CMD = re.compile(r"^[a-zA-Z0-9_\-./]+$")  # naïve allow-list; extend for prod
+SAFE_TOKEN = re.compile(r"^[a-zA-Z0-9_\-./]+$")  # naïve allow-list
 
 def run_cmd(command: str) -> str:
-    if not SAFE_CMD.match(command):
+    tokens = command.split()
+    if not tokens or not all(SAFE_TOKEN.fullmatch(t) for t in tokens):
         return "Blocked: unsafe characters in command."
     try:
-        res = subprocess.run(command.split(),
+        res = subprocess.run(tokens,
                              capture_output=True,
                              text=True,
                              timeout=30)
