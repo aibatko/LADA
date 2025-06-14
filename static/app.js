@@ -1,6 +1,21 @@
 const chatPane = document.getElementById("chatPane");
 const termPane = document.getElementById("termPane");
 
+async function loadHistory(){
+  const r = await fetch("/api/history");
+  const hist = await r.json();
+  hist.forEach(m=>{
+    if(m.role === "user")
+      bubble(m.content,"user",chatPane);
+    else if(m.role === "assistant" && m.content)
+      bubble(m.content,"ai",chatPane);
+    else if(m.role === "tool")
+      bubble(`$ ${m.name}\n${m.content}`,"code",termPane);
+  });
+}
+
+loadHistory();
+
 async function post(url, body){
   const r = await fetch(url,{
       method:"POST",
