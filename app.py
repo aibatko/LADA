@@ -1,7 +1,7 @@
 """
 LADA – Local Agent Driven Assistant  v0.2
 """
-import os, json, pathlib, subprocess, webbrowser, datetime, shlex
+import os, json, pathlib, subprocess, webbrowser, datetime, shlex, tempfile
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO
 from openai import OpenAI  # new 1.x import
@@ -99,6 +99,21 @@ TOOLS = [
           "required": ["command"]
         }
       }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "change_file",
+        "description": "Apply a git patch to a file. Call read_file first to get the current content and then send a unified diff patch.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "filename": {"type": "string"},
+            "patch": {"type": "string"}
+          },
+          "required": ["filename", "patch"]
+        }
+      }
     }
 ]
 
@@ -112,8 +127,33 @@ def read_file(filename):
     p = pathlib.Path(filename).expanduser()
     return p.read_text() if p.exists() else f"{p} not found."
 
+def change_file(filename: str, patch: str):
+    """Apply a git patch to *filename* and return result."""
+    path = pathlib.Path(filename).expanduser()
+    if not within_root(path):
+        return "Blocked: path outside working directory."
+    try:
+        res = subprocess.run(
+            ["git", "apply", "-"],
+            input=patch,
+            text=True,
+            capture_output=True,
+            cwd=ROOT_DIR,
+        )
+        if res.returncode != 0:
+            content = path.read_text() if path.exists() else ""
+            return f"Patch failed:\n{res.stderr}\nCurrent file:\n{content}"
+        return f"Patch applied to {path}."
+    except Exception as exc:
+        return f"Error applying patch: {exc}"
+
 # map tool names to callables
-TOOL_FUNCS = {"write_file": write_file, "read_file": read_file, "write_command": run_cmd}
+TOOL_FUNCS = {
+    "write_file": write_file,
+    "read_file": read_file,
+    "write_command": run_cmd,
+    "change_file": change_file,
+}
 
 # ---------- routes ---------- #
 @app.route("/")
