@@ -36,7 +36,7 @@ function bubble(text, cls, pane){
 
 /* ---------- CHAT ---------- */
 const chatInput  = document.getElementById("chatInput");
-document.getElementById("sendChat").onclick = async ()=>{
+async function sendChat(){
   const msg = chatInput.value.trim(); if(!msg) return;
   bubble(msg,"user",chatPane); chatInput.value="";
 
@@ -50,14 +50,28 @@ document.getElementById("sendChat").onclick = async ()=>{
     bubble(`$ ${t.cmd}\n${t.result}`,"code",termPane);
   });
   bubble(data.reply,"ai",chatPane);
-};
+}
+document.getElementById("sendChat").onclick = sendChat;
+chatInput.addEventListener("keydown", e => {
+  if(e.key === "Enter" && !e.shiftKey){
+    e.preventDefault();
+    sendChat();
+  }
+});
 
 /* ---------- TERMINAL ---------- */
 const cmdInput   = document.getElementById("cmdInput");
-document.getElementById("sendCmd").onclick = async ()=>{
+async function sendCmd(){
   const cmd = cmdInput.value.trim(); if(!cmd) return;
   bubble(`$ ${cmd}`,"code",termPane); cmdInput.value="";
   const res = await post("/api/command",{ command: cmd });
   bubble(res.result,"code",termPane);
-};
+}
+document.getElementById("sendCmd").onclick = sendCmd;
+cmdInput.addEventListener("keydown", e => {
+  if(e.key === "Enter" && !e.shiftKey){
+    e.preventDefault();
+    sendCmd();
+  }
+});
 
