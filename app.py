@@ -184,7 +184,8 @@ def chat():
             for call in choice.message.tool_calls:
                 args = json.loads(call.function.arguments or "{}")
                 result = TOOL_FUNCS[call.function.name](**args)
-                tool_runs.append({"cmd": call.function.name, "result": result})
+                tool_label = args.get("command") if call.function.name == "write_command" else call.function.name
+                tool_runs.append({"cmd": tool_label, "result": result})
 
                 # add tool call and result to the conversation history
                 messages.append(
@@ -197,7 +198,7 @@ def chat():
                     {
                         "role": "tool",
                         "tool_call_id": call.id,
-                        "name": call.function.name,
+                        "name": tool_label,
                         "content": result,
                     }
                 )
