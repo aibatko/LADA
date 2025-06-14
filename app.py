@@ -10,12 +10,18 @@ app = Flask(__name__, static_folder="static", template_folder="templates")
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 HISTORY_FILE = "history.json"
-try:
-    with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-        HISTORY: list[dict] = json.load(f)
-except FileNotFoundError:
+USE_SESSION_HISTORY = False  
+if USE_SESSION_HISTORY:
+    try:
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            HISTORY: list[dict] = json.load(f)
+    except FileNotFoundError:
+        HISTORY = []
+else:
+    # Erase history file on start if not using session history
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        f.write("[]")
     HISTORY = []
-
 # ---------- helpers ---------- #
 def get_client(provider: str):
     if provider.lower() == "ollama":
