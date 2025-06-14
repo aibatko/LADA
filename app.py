@@ -4,7 +4,7 @@ LADA – Local Agent Driven Assistant  v0.2
 import os, re, json, pathlib, subprocess, webbrowser, datetime
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO
-from openai import OpenAI                                           # new 1.x import :contentReference[oaicite:6]{index=6}
+from openai import OpenAI  # new 1.x import
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 socketio = SocketIO(app, cors_allowed_origins="*")
@@ -19,10 +19,10 @@ except FileNotFoundError:
 # ---------- helpers ---------- #
 def get_client(provider: str):
     if provider.lower() == "ollama":
-        return OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")    # :contentReference[oaicite:7]{index=7}
+        return OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
     return OpenAI()
 
-SAFE_CMD = re.compile(r"^[a-zA-Z0-9_\-./]+$")           # naïve allow-list; extend for prod
+SAFE_CMD = re.compile(r"^[a-zA-Z0-9_\-./]+$")  # naïve allow-list; extend for prod
 
 def run_cmd(command: str) -> str:
     if not SAFE_CMD.match(command):
@@ -106,23 +106,34 @@ def chat():
     client    = get_client(provider)
     tool_runs = []                              # collected command outputs for UI
 
-    while True:                                 # 🚀 loop until model stops calling tools
+    while True:  # 🚀 loop until model stops calling tools
         resp = client.chat.completions.create(
-            model=model, messages=messages, tools=TOOLS,
-            tool_choice="auto" )
+            model=model, messages=messages, tools=TOOLS, tool_choice="auto"
+        )
         choice = resp.choices[0]
 
-        if choice.finish_reason == "tool_call":
-            call = choice.message.tool_call
-            args = json.loads(call.arguments or "{}")
-            result = TOOL_FUNCS[call.name](**args)
-            tool_runs.append({"cmd": call.name, "result": result})
+        if choice.finish_reason == "tool_calls":
+            for call in choice.message.tool_calls:
+                args = json.loads(call.function.arguments or "{}")
+                result = TOOL_FUNCS[call.function.name](**args)
+                tool_runs.append({"cmd": call.function.name, "result": result})
 
-            messages.append(choice.message.model_dump(exclude_none=True))  # add tool call to history
-            messages.append({"role":"tool",
-                             "name":call.name,
-                             "content":result})
-            continue                                 # ask again with new evidence
+                # add tool call and result to the conversation history
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "tool_calls": [call.model_dump(exclude_none=True)],
+                    }
+                )
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call.id,
+                        "name": call.function.name,
+                        "content": result,
+                    }
+                )
+            continue  # ask again with new evidence
         break
 
     # assistant’s final reply
@@ -144,6 +155,6 @@ def terminal():
 
 # ---------- main ---------- #
 if __name__ == "__main__":
-    webbrowser.open("http://127.0.0.1:5000")         # auto-open :contentReference[oaicite:8]{index=8}
+    webbrowser.open("http://127.0.0.1:5000")  # auto-open browser
     socketio.run(app, debug=True)
 
