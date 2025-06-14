@@ -1,7 +1,7 @@
 """
 LADA – Local Agent Driven Assistant  v0.2
 """
-import os, re, json, pathlib, subprocess, webbrowser, datetime
+import os, json, pathlib, subprocess, webbrowser, datetime, shlex
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO
 from openai import OpenAI  # new 1.x import
@@ -28,12 +28,28 @@ def get_client(provider: str):
         return OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
     return OpenAI()
 
-SAFE_TOKEN = re.compile(r"^[a-zA-Z0-9_\-./]+$")  # naïve allow-list
+ROOT_DIR = pathlib.Path.cwd().resolve()
+
+def within_root(path: pathlib.Path) -> bool:
+    """Return True if *path* is within the starting directory."""
+    try:
+        path.resolve(strict=False).relative_to(ROOT_DIR)
+        return True
+    except ValueError:
+        return False
+
+def token_is_path(token: str) -> bool:
+    if token.startswith("-"):
+        return False
+    return token.startswith(('.', '/', '~')) or '/' in token
 
 def run_cmd(command: str) -> str:
-    tokens = command.split()
-    if not tokens or not all(SAFE_TOKEN.fullmatch(t) for t in tokens):
-        return "Blocked: unsafe characters in command."
+    tokens = shlex.split(command)
+    for t in tokens:
+        if token_is_path(t):
+            p = pathlib.Path(t).expanduser()
+            if not within_root(p):
+                return "Blocked: path outside working directory."
     try:
         res = subprocess.run(tokens,
                              capture_output=True,
