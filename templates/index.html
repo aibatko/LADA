@@ -8,10 +8,13 @@
 <body>
   <header>
     <h1>LADA</h1>
-    <select id="provider">
+    <select id="orcProvider">
       <option>OpenAI</option><option>Ollama</option>
     </select>
     <input id="orcModel"  value="o4-mini"   placeholder="orchestrator model">
+    <select id="coderProvider">
+      <option>OpenAI</option><option>Ollama</option>
+    </select>
     <input id="coderModel" value="gpt-4.1-mini" placeholder="coder model">
     <select id="workers">
       <option>1</option>

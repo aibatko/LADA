@@ -41,9 +41,9 @@ function showPlan(planStr, round){
 
     plan.tasks.forEach(t=>{ html += `<li>[Agent ${t.agent}] ${t.desc}</li>`; });
     html += '</ul>';
-    bubble(html,'ai',chatPane,true);
+    bubble(html,'orc',chatPane,true);
     for(let i=1;i<=plan.agents;i++){
-      const wrap = bubble(`Agent ${i}: `,'ai',chatPane,true);
+      const wrap = bubble(`Agent ${i}: `,'orc',chatPane,true);
       const prog = document.createElement('progress');
       prog.id = `round${round}-agent${i}-prog`;
       prog.max = 100;
@@ -63,13 +63,21 @@ async function sendChat(){
 
   const data = await post("/api/chat",{
     prompt:  msg,
-    provider: document.getElementById("provider").value,
+    orc_provider:   document.getElementById("orcProvider").value,
+    coder_provider: document.getElementById("coderProvider").value,
     orchestrator_model: document.getElementById("orcModel").value,
     coder_model:        document.getElementById("coderModel").value,
     workers: parseInt(document.getElementById("workers").value,10)
   });
 
   (data.plans||[]).forEach((p,i)=> showPlan(p,i+1));
+  if(data.coder){
+    (data.coder.tool_runs||[]).forEach(t=>{
+      bubble(`[Coder] $ ${t.cmd}\n${t.result}`,"code",termPane);
+    });
+    if(data.coder.reply)
+      bubble(`[Coder] ${data.coder.reply}`,"ai",chatPane);
+  }
   if(data.orchestrator){
     (data.orchestrator.tool_runs||[]).forEach(t=>{
       bubble(`[Orc] $ ${t.cmd}\n${t.result}`,"code",termPane);
@@ -84,7 +92,7 @@ async function sendChat(){
     if(prog) prog.value = 100;
   });
   if(data.orchestrator && data.orchestrator.reply){
-    bubble(`[Orchestrator] ${data.orchestrator.reply}`,"ai",chatPane);
+    bubble(`[Orchestrator] ${data.orchestrator.reply}`,"orc",chatPane);
   }
 }
 document.getElementById("sendChat").onclick = sendChat;

@@ -168,16 +168,50 @@ def history():
 @app.route("/api/chat", methods=["POST"])
 def chat():
     data       = request.json
-    provider   = data["provider"]
+    orc_provider   = data["orc_provider"]
+    coder_provider = data["coder_provider"]
     orc_model  = data["orchestrator_model"]
     coder_model= data["coder_model"]
     workers    = int(data.get("workers", 2))
     user_msg   = data["prompt"]
 
-    client = get_client(provider)
+    orc_client   = get_client(orc_provider)
+    coder_client = get_client(coder_provider)
 
 
     HISTORY.append({"role": "user", "content": user_msg})
+
+    # ----- quick check with coder -----
+    coder_sys = (
+        "You are the coder agent. Decide if the last user request requires a plan with multiple agents. "
+        "If it can be answered directly or with a single command, do so using the provided tools. "
+        "Otherwise reply with 'ORCHESTRATE'."
+    )
+
+    def quick_coder():
+        msgs = [{"role": "system", "content": coder_sys}] + HISTORY
+        t_runs = []
+        while True:
+            r = coder_client.chat.completions.create(model=coder_model, messages=msgs, tools=TOOLS, tool_choice="auto")
+            c = r.choices[0]
+            if c.finish_reason == "tool_calls":
+                msgs.append({"role": "assistant", "tool_calls": [tc.model_dump(exclude_none=True) for tc in c.message.tool_calls]})
+                for a in c.message.tool_calls:
+                    a_args = json.loads(a.function.arguments or "{}")
+                    res = TOOL_FUNCS[a.function.name](**a_args)
+                    label = a_args.get("command") if a.function.name == "write_command" else a.function.name
+                    t_runs.append({"cmd": label, "result": res})
+                    msgs.append({"role": "tool", "tool_call_id": a.id, "name": label, "content": res})
+                continue
+            msgs.append({"role": "assistant", "content": c.message.content})
+            return c.message.content.strip(), t_runs, msgs
+
+    decision, coder_runs, coder_msgs = quick_coder()
+    if decision.upper() != "ORCHESTRATE":
+        HISTORY.extend(coder_msgs)
+        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(HISTORY, f, ensure_ascii=False, indent=2)
+        return jsonify({"plans": [], "coder": {"reply": decision, "tool_runs": coder_runs}, "orchestrator": None, "agents": []})
 
     # ----- ask orchestrator for a plan -----
     planner_sys = (
@@ -227,7 +261,7 @@ def chat():
         msgs = [{"role": "system", "content": "You are coder agent %d. Complete ONLY the following tasks in order:\n%s" % (aid, "\n".join(f"- {t}" for t in tasks))}]
         t_runs = []
         while True:
-            r = client.chat.completions.create(model=coder_model, messages=msgs, tools=TOOLS, tool_choice="auto")
+            r = coder_client.chat.completions.create(model=coder_model, messages=msgs, tools=TOOLS, tool_choice="auto")
             c = r.choices[0]
             if c.finish_reason == "tool_calls":
                 for a in c.message.tool_calls:
@@ -243,7 +277,7 @@ def chat():
 
 
     while True:
-        resp = client.chat.completions.create(
+        resp = orc_client.chat.completions.create(
             model=orc_model,
             messages=orc_messages,
             tools=TOOLS + [plan_tool],
