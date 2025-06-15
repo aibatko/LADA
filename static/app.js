@@ -25,13 +25,33 @@ async function post(url, body){
   return r.json();
 }
 
-function bubble(text, cls, pane){
+function bubble(text, cls, pane, html=false){
   const d = document.createElement("div");
   d.className = `bubble ${cls}`;
-  d.textContent = text;
+  if(html) d.innerHTML = text; else d.textContent = text;
   pane.append(d);
-  /* wait till the element is rendered, then jump to bottom */
   requestAnimationFrame(()=>{ pane.scrollTop = pane.scrollHeight; });
+  return d;
+}
+
+function showPlan(planStr){
+  try{
+    const plan = JSON.parse(planStr);
+    let html = `<strong>Plan:</strong><br>Agents: ${plan.agents}<ul>`;
+    plan.tasks.forEach(t=>{ html += `<li>[Agent ${t.agent}] ${t.desc}</li>`; });
+    html += '</ul>';
+    bubble(html,'ai',chatPane,true);
+    for(let i=1;i<=plan.agents;i++){
+      const wrap = bubble(`Agent ${i}: `,'ai',chatPane,true);
+      const prog = document.createElement('progress');
+      prog.id = `agent${i}-prog`;
+      prog.max = 100;
+      prog.value = 0;
+      wrap.appendChild(prog);
+    }
+  }catch(e){
+    bubble(planStr,'ai',chatPane);
+  }
 }
 
 /* ---------- CHAT ---------- */
@@ -41,15 +61,22 @@ async function sendChat(){
   bubble(msg,"user",chatPane); chatInput.value="";
 
   const data = await post("/api/chat",{
-    prompt: msg,
-    model:  document.getElementById("model").value,
-    provider: document.getElementById("provider").value
+    prompt:  msg,
+    provider: document.getElementById("provider").value,
+    orchestrator_model: document.getElementById("orcModel").value,
+    coder_model:        document.getElementById("coderModel").value,
+    workers: parseInt(document.getElementById("workers").value,10)
   });
 
-  data.tool_runs.forEach(t=>{
-    bubble(`$ ${t.cmd}\n${t.result}`,"code",termPane);
+  if(data.plan) showPlan(data.plan);
+  (data.agents||[]).forEach(a=>{
+    a.tool_runs.forEach(t=>{
+      bubble(`[A${a.id}] $ ${t.cmd}\n${t.result}`,"code",termPane);
+    });
+    const b = bubble(`[Agent ${a.id}] ${a.reply}`,"ai",chatPane);
+    const prog = document.getElementById(`agent${a.id}-prog`);
+    if(prog) prog.value = 100;
   });
-  bubble(data.reply,"ai",chatPane);
 }
 document.getElementById("sendChat").onclick = sendChat;
 chatInput.addEventListener("keydown", e => {
