@@ -188,8 +188,31 @@ def chat():
         "count. Respond ONLY with JSON like: "
         "{\"agents\":N,\"tasks\":[{\"agent\":1,\"desc\":\"task\"}]}"
     )
+    plan_schema = {
+        "type": "object",
+        "properties": {
+            "agents": {"type": "integer"},
+            "tasks": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "agent": {"type": "integer"},
+                        "desc": {"type": "string"},
+                    },
+                    "required": ["agent", "desc"],
+                },
+            },
+        },
+        "required": ["agents", "tasks"],
+    }
+
     plan_messages = [{"role": "system", "content": planner_sys}] + messages
-    resp = client.chat.completions.create(model=orc_model, messages=plan_messages)
+    resp = client.chat.completions.create(
+        model=orc_model,
+        messages=plan_messages,
+        response_format={"type": "json_object", "schema": plan_schema},
+    )
     plan_text = resp.choices[0].message.content
     try:
         plan = json.loads(plan_text)
