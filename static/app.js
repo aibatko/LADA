@@ -76,6 +76,12 @@ async function sendChat(){
     const b = bubble(`[Agent ${a.id}] ${a.reply}`,"ai",chatPane);
     const prog = document.getElementById(`agent${a.id}-prog`);
     if(prog) prog.value = 100;
+  // if(data.plan) bubble(data.plan,"ai",chatPane);
+  // (data.agents||[]).forEach(a=>{
+  //   a.tool_runs.forEach(t=>{
+  //     bubble(`$ ${t.cmd}\n${t.result}`,"code",termPane);
+  //   });
+  //   bubble(`[Agent ${a.id}] ${a.reply}`,"ai",chatPane);
   });
 }
 document.getElementById("sendChat").onclick = sendChat;
