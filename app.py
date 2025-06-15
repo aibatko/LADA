@@ -176,6 +176,7 @@ def chat():
 
     client = get_client(provider)
 
+
     HISTORY.append({"role": "user", "content": user_msg})
 
     # ----- ask orchestrator for a plan -----
@@ -205,6 +206,7 @@ def chat():
         },
         "required": ["agents", "tasks"],
     }
+
 
     plan_tool = {
         "type": "function",
@@ -239,6 +241,7 @@ def chat():
             msgs.append({"role": "assistant", "content": c.message.content})
             return {"id": aid, "reply": c.message.content, "tool_runs": t_runs, "messages": msgs, "round": round_no}
 
+
     while True:
         resp = client.chat.completions.create(
             model=orc_model,
@@ -246,6 +249,9 @@ def chat():
             tools=TOOLS + [plan_tool],
             tool_choice="auto",
         )
+        round_no += 1
+        plan_text = "{}"
+        plan = {"agents": 0, "tasks": []}
         choice = resp.choices[0]
         round_no += 1
 

@@ -38,6 +38,7 @@ function showPlan(planStr, round){
   try{
     const plan = JSON.parse(planStr);
     let html = `<strong>Plan ${round}:</strong><br>Agents: ${plan.agents}<ul>`;
+
     plan.tasks.forEach(t=>{ html += `<li>[Agent ${t.agent}] ${t.desc}</li>`; });
     html += '</ul>';
     bubble(html,'ai',chatPane,true);
