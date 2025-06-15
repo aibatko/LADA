@@ -10,7 +10,7 @@ from openai import OpenAI  # new 1.x import
 app = Flask(__name__, static_folder="static", template_folder="templates")
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-HISTORY_FILE = "history.json"
+HISTORY_FILE = "../history.json"
 USE_SESSION_HISTORY = False  
 if USE_SESSION_HISTORY:
     try:
@@ -108,7 +108,7 @@ TOOLS = [
       "type": "function",
       "function": {
         "name": "write_command",
-        "description": "Execute a Unix command and capture stdout/stderr",
+        "description": "Execute a Unix command and see the result",
         "parameters": {
           "type": "object",
           "properties": { "command": {"type": "string"} },
@@ -142,7 +142,7 @@ DECISION_SCHEMA = {
         "action": {
             "type": "string",
             "enum": ["answer", "hand_off"],
-            "description": "Choose 'answer' to respond immediately, or 'hand_off' to hand off."
+            "description": "Choose 'answer' to respond immediately, or 'hand_off' to hand off the task to the bigger model."
         },
         "answer": {
             "type": "string",
@@ -234,7 +234,7 @@ def chat():
     # )
     coder_sys = (
         "You are a quick answering **router**. "
-        "If the user's last message can be answered quickly, call the `route` function with "
+        "If the user's last message can be answered quickly or requires minimal command use, call the `route` function with "
         "`{\"action\":\"answer\",\"answer\":\"…\"}`. "
         "Otherwise if the task requires careful planning, multiple steps or actions call `route` with `{\"action\":\"hand_off\"}` to hand off the task to a bigger model with more tools and resources."
     )
@@ -297,10 +297,10 @@ def chat():
         # "tasks do not rely on one agent continuing work of another unless you "
         # "explicitly provide the previous results. Respond ONLY with JSON like: "
         # "{\"agents\":N,\"tasks\":[{\"agent\":1,\"desc\":\"task\"}]}"
-        " You are a code super agent - you orchestrate multiple smaller agents. "
-        " You have the ability to assign tasks to individual agents or execute commands on your own. "
-        " Before craeting smaller agents, create a detailed plan for everything that needs to be done. "
-        " Right now you can have up to %d workers available. "
+        " You are a code super agent and have the ability to orchestrate multiple smaller agents. "
+        " You can do this by assigning tasks to individual agents or you can execute commands on your own (the smaller agents can also execute the same commands like writing, reading and chaning files). "
+        " Before creating smaller agents, create a detailed plan for everything that needs to be done. "
+        " Right now you can have up to %d workers for 1 iteration. "
         " When you spawn a new agent it has no memory of previous tasks so you should give it a detailed prompt and list what it needs to do. "
         " Your agents work in parallel and can execute tasks independently but that can lead to a conflict when working on the same file so you should avoid that. "
         " You also have the ability to execute more iterations after one is compelte - if a process requires more steps than your available workers or needs something to be done in sequence, you can do that by creating agents after you got feedback from the previous ones.\n\n "
@@ -337,6 +337,7 @@ def chat():
         },
     }
     orc_messages = [{"role": "system", "content": planner_sys}] + HISTORY
+    print("Orchestrator messages:", orc_messages)
     orc_tool_runs: list[dict] = []
     final_reply = ""
     all_plans: list[str] = []
