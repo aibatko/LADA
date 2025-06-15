@@ -1,6 +1,6 @@
 const chatPane = document.getElementById("chatPane");
 const termPane = document.getElementById("termPane");
-const socket = io();
+const socket = window.io ? io() : { on: ()=>{}, emit: ()=>{} };
 const shownPlans = new Set();
 const shownAgents = new Set();
 
