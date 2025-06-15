@@ -42,7 +42,8 @@ main{
   width:100%;
   margin:.4rem 0;
   padding:.6rem;
-  border-radius:8px
+  border-radius:8px;
+  white-space:pre-wrap;
 }
 .ai   {background:rgba(56,189,248,.15)}
 .user {align-self:flex-end;background:rgba(240,171,252,.2)}
