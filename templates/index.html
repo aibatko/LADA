@@ -11,7 +11,14 @@
     <select id="provider">
       <option>OpenAI</option><option>Ollama</option>
     </select>
-    <input id="model" value="gpt-4.1-mini">
+    <input id="orcModel"  value="o4-mini"   placeholder="orchestrator model">
+    <input id="coderModel" value="gpt-4.1-mini" placeholder="coder model">
+    <select id="workers">
+      <option>1</option>
+      <option selected>2</option>
+      <option>3</option>
+      <option>4</option>
+    </select>
   </header>
 
   <main id="panes">
