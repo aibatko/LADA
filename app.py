@@ -247,13 +247,16 @@ def chat():
         agent_tasks[aid].append(t.get("desc", ""))
 
     def run_agent(aid: int, tasks: list[str]):
+        """Run a coder agent on its assigned tasks."""
         msgs = [
             {
                 "role": "system",
-                "content": "You are coder agent %d. Complete the following tasks in order:\n%s"
-                % (aid, "\n".join(f"- {t}" for t in tasks)),
+                "content": (
+                    "You are coder agent %d. Complete ONLY the following tasks in order:\n%s"
+                    % (aid, "\n".join(f"- {t}" for t in tasks))
+                ),
             }
-        ] + messages
+        ]
         t_runs = []
         while True:
             r = client.chat.completions.create(
