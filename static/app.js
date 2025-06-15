@@ -1,5 +1,25 @@
 const chatPane = document.getElementById("chatPane");
 const termPane = document.getElementById("termPane");
+const socket = io();
+const shownPlans = new Set();
+const shownAgents = new Set();
+
+socket.on('plan', d => {
+  if(!shownPlans.has(d.round)){
+    shownPlans.add(d.round);
+    showPlan(d.plan, d.round);
+  }
+});
+
+socket.on('agent_result', a => {
+  const key = `${a.round}-${a.id}`;
+  if(shownAgents.has(key)) return;
+  shownAgents.add(key);
+  a.tool_runs.forEach(t => {
+    bubble(`[A${a.id}] $ ${t.cmd}\n${t.result}`, 'code', termPane);
+  });
+  bubble(`[Agent ${a.id}] ${a.reply}`, 'ai', chatPane);
+});
 
 async function loadHistory(){
   const r = await fetch("/api/history");
@@ -42,14 +62,6 @@ function showPlan(planStr, round){
     plan.tasks.forEach(t=>{ html += `<li>[Agent ${t.agent}] ${t.desc}</li>`; });
     html += '</ul>';
     bubble(html,'orc',chatPane,true);
-    for(let i=1;i<=plan.agents;i++){
-      const wrap = bubble(`Agent ${i}: `,'orc',chatPane,true);
-      const prog = document.createElement('progress');
-      prog.id = `round${round}-agent${i}-prog`;
-      prog.max = 100;
-      prog.value = 0;
-      wrap.appendChild(prog);
-    }
   }catch(e){
     bubble(planStr,'ai',chatPane);
   }
@@ -70,7 +82,12 @@ async function sendChat(){
     workers: parseInt(document.getElementById("workers").value,10)
   });
 
-  (data.plans||[]).forEach((p,i)=> showPlan(p,i+1));
+  (data.plans||[]).forEach((p,i)=>{
+    if(!shownPlans.has(i+1)){
+      shownPlans.add(i+1);
+      showPlan(p,i+1);
+    }
+  });
   if(data.coder){
     (data.coder.tool_runs||[]).forEach(t=>{
       bubble(`[Coder] $ ${t.cmd}\n${t.result}`,"code",termPane);
@@ -84,12 +101,13 @@ async function sendChat(){
     });
   }
   (data.agents||[]).forEach(a=>{
+    const key = `${a.round}-${a.id}`;
+    if(shownAgents.has(key)) return;
+    shownAgents.add(key);
     a.tool_runs.forEach(t=>{
       bubble(`[A${a.id}] $ ${t.cmd}\n${t.result}`,"code",termPane);
     });
     bubble(`[Agent ${a.id}] ${a.reply}`,"ai",chatPane);
-    const prog = document.getElementById(`round${a.round}-agent${a.id}-prog`);
-    if(prog) prog.value = 100;
   });
   if(data.orchestrator && data.orchestrator.reply){
     bubble(`[Orchestrator] ${data.orchestrator.reply}`,"orc",chatPane);

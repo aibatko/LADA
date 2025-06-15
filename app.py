@@ -358,6 +358,7 @@ def chat():
                     except Exception:
                         plan = {"agents": 0, "tasks": []}
                     all_plans.append(plan_text)
+                    socketio.emit('plan', {'plan': plan_text, 'round': round_no})
                     if plan.get("tasks") and plan.get("agents", 0) > 0:
                         num_agents = min(int(plan.get("agents", 1)), workers)
                         agent_tasks = {i: [] for i in range(1, num_agents + 1)}
@@ -372,6 +373,10 @@ def chat():
                         for r in results:
                             all_agents.append(r)
                             HISTORY.extend(r["messages"])
+                            socketio.emit('agent_result', {
+                                'id': r['id'], 'reply': r['reply'],
+                                'tool_runs': r['tool_runs'], 'round': r['round']
+                            })
                         summary = "\n".join(f"Agent {r['id']} result: {r['reply']}" for r in results)
                         orc_messages.append({"role": "user", "content": summary})
                     continue
@@ -390,6 +395,7 @@ def chat():
 
         if isinstance(plan, dict) and "tasks" in plan and "agents" in plan:
             all_plans.append(text)
+            socketio.emit('plan', {'plan': text, 'round': round_no})
             if plan.get("tasks") and plan.get("agents", 0) > 0:
                 num_agents = min(int(plan.get("agents", 1)), workers)
                 agent_tasks = {i: [] for i in range(1, num_agents + 1)}
@@ -404,6 +410,10 @@ def chat():
                 for r in results:
                     all_agents.append(r)
                     HISTORY.extend(r["messages"])
+                    socketio.emit('agent_result', {
+                        'id': r['id'], 'reply': r['reply'],
+                        'tool_runs': r['tool_runs'], 'round': r['round']
+                    })
                 summary = "\n".join(f"Agent {r['id']} result: {r['reply']}" for r in results)
                 orc_messages.append({"role": "user", "content": summary})
                 continue
