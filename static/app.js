@@ -25,13 +25,33 @@ async function post(url, body){
   return r.json();
 }
 
-function bubble(text, cls, pane){
+function bubble(text, cls, pane, html=false){
   const d = document.createElement("div");
   d.className = `bubble ${cls}`;
-  d.textContent = text;
+  if(html) d.innerHTML = text; else d.textContent = text;
   pane.append(d);
-  /* wait till the element is rendered, then jump to bottom */
   requestAnimationFrame(()=>{ pane.scrollTop = pane.scrollHeight; });
+  return d;
+}
+
+function showPlan(planStr){
+  try{
+    const plan = JSON.parse(planStr);
+    let html = `<strong>Plan:</strong><br>Agents: ${plan.agents}<ul>`;
+    plan.tasks.forEach(t=>{ html += `<li>[Agent ${t.agent}] ${t.desc}</li>`; });
+    html += '</ul>';
+    bubble(html,'ai',chatPane,true);
+    for(let i=1;i<=plan.agents;i++){
+      const wrap = bubble(`Agent ${i}: `,'ai',chatPane,true);
+      const prog = document.createElement('progress');
+      prog.id = `agent${i}-prog`;
+      prog.max = 100;
+      prog.value = 0;
+      wrap.appendChild(prog);
+    }
+  }catch(e){
+    bubble(planStr,'ai',chatPane);
+  }
 }
 
 /* ---------- CHAT ---------- */
@@ -48,12 +68,20 @@ async function sendChat(){
     workers: parseInt(document.getElementById("workers").value,10)
   });
 
-  if(data.plan) bubble(data.plan,"ai",chatPane);
+  if(data.plan) showPlan(data.plan);
   (data.agents||[]).forEach(a=>{
     a.tool_runs.forEach(t=>{
-      bubble(`$ ${t.cmd}\n${t.result}`,"code",termPane);
+      bubble(`[A${a.id}] $ ${t.cmd}\n${t.result}`,"code",termPane);
     });
-    bubble(`[Agent ${a.id}] ${a.reply}`,"ai",chatPane);
+    const b = bubble(`[Agent ${a.id}] ${a.reply}`,"ai",chatPane);
+    const prog = document.getElementById(`agent${a.id}-prog`);
+    if(prog) prog.value = 100;
+  // if(data.plan) bubble(data.plan,"ai",chatPane);
+  // (data.agents||[]).forEach(a=>{
+  //   a.tool_runs.forEach(t=>{
+  //     bubble(`$ ${t.cmd}\n${t.result}`,"code",termPane);
+  //   });
+  //   bubble(`[Agent ${a.id}] ${a.reply}`,"ai",chatPane);
   });
 }
 document.getElementById("sendChat").onclick = sendChat;
