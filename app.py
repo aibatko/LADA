@@ -23,6 +23,21 @@ else:
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         f.write("[]")
     HISTORY = []
+# ---------- conversation-logging helpers ---------- #
+def log_tool_call(name: str, args: dict) -> None:
+    """
+    Append a readable trace of a tool/command invocation to HISTORY
+    so the frontend can display it in-line with the chat.
+    """
+    HISTORY.append({
+        "role": "assistant",
+        "content": f"[tool_call] {name} {json.dumps(args, ensure_ascii=False)}"
+    })
+
+def flush_history_to_disk() -> None:
+    """Persist the in-memory HISTORY to history.json."""
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(HISTORY, f, ensure_ascii=False, indent=2)
 # ---------- helpers ---------- #
 def get_client(provider: str):
     if provider.lower() == "ollama":
@@ -126,8 +141,8 @@ DECISION_SCHEMA = {
     "properties": {
         "action": {
             "type": "string",
-            "enum": ["answer", "orchestrate"],
-            "description": "Choose 'answer' to respond immediately, or 'orchestrate' to hand off."
+            "enum": ["answer", "hand_off"],
+            "description": "Choose 'answer' to respond immediately, or 'hand_off' to hand off."
         },
         "answer": {
             "type": "string",
@@ -221,7 +236,7 @@ def chat():
         "You are a quick answering **router**. "
         "If the user's last message can be answered quickly, call the `route` function with "
         "`{\"action\":\"answer\",\"answer\":\"…\"}`. "
-        "Otherwise if the task requires careful planning, multiple steps or actions call `route` with `{\"action\":\"orchestrate\"}` to hand off the task to a bigger model with more tools and resources."
+        "Otherwise if the task requires careful planning, multiple steps or actions call `route` with `{\"action\":\"hand_off\"}` to hand off the task to a bigger model with more tools and resources."
     )
 
 
@@ -241,6 +256,7 @@ def chat():
                 msgs.append({"role": "assistant", "tool_calls": [tc.model_dump(exclude_none=True) for tc in c.message.tool_calls]})
                 for a in c.message.tool_calls:
                     a_args = json.loads(a.function.arguments or "{}")
+                    log_tool_call(a.function.name, a_args)
                     # res = TOOL_FUNCS[a.function.name](**a_args)
                     # label = a_args.get("command") if a.function.name == "write_command" else a.function.name
                     # t_runs.append({"cmd": label, "result": res})
@@ -264,18 +280,31 @@ def chat():
             return c.message.content.strip(), t_runs, msgs
 
     decision, coder_runs, coder_msgs = quick_coder()
+    print("Router decision:", decision, "Coder runs:", coder_runs)
     if decision.upper() != "ORCHESTRATE":
         HISTORY.extend(coder_msgs)
-        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-            json.dump(HISTORY, f, ensure_ascii=False, indent=2)
+        # with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        #     json.dump(HISTORY, f, ensure_ascii=False, indent=2)
+        flush_history_to_disk()
         return jsonify({"plans": [], "coder": {"reply": decision, "tool_runs": coder_runs}, "orchestrator": None, "agents": []})
 
     # ----- ask orchestrator for a plan -----
     planner_sys = (
-        "You are an orchestrator. Coder agents are independent and share no "
-        "memory. Each agent only sees its own task list. You have up to %d "
-        "workers available and must never exceed this number. When assigning "
-        "tasks do not rely on one agent continuing work of another unless you "
+        # "You are an orchestrator. Coder agents are independent and share no "
+        # "memory. Each agent only sees its own task list. You have up to %d "
+        # "workers available and must never exceed this number. "
+        # "When assigning "
+        # "tasks do not rely on one agent continuing work of another unless you "
+        # "explicitly provide the previous results. Respond ONLY with JSON like: "
+        # "{\"agents\":N,\"tasks\":[{\"agent\":1,\"desc\":\"task\"}]}"
+        " You are a code super agent - you orchestrate multiple smaller agents. "
+        " You have the ability to assign tasks to individual agents or execute commands on your own. "
+        " Before craeting smaller agents, create a detailed plan for everything that needs to be done. "
+        " Right now you can have up to %d workers available. "
+        " When you spawn a new agent it has no memory of previous tasks so you should give it a detailed prompt and list what it needs to do. "
+        " Your agents work in parallel and can execute tasks independently but that can lead to a conflict when working on the same file so you should avoid that. "
+        " You also have the ability to execute more iterations after one is compelte - if a process requires more steps than your available workers or needs something to be done in sequence, you can do that by creating agents after you got feedback from the previous ones.\n\n "
+        "When assigning tasks do not rely on one agent continuing work of another unless you "
         "explicitly provide the previous results. Respond ONLY with JSON like: "
         "{\"agents\":N,\"tasks\":[{\"agent\":1,\"desc\":\"task\"}]}"
     ) % workers
@@ -323,6 +352,7 @@ def chat():
             if c.finish_reason == "tool_calls":
                 for a in c.message.tool_calls:
                     a_args = json.loads(a.function.arguments or "{}")
+                    log_tool_call(a.function.name, a_args)
                     res = TOOL_FUNCS[a.function.name](**a_args)
                     label = a_args.get("command") if a.function.name == "write_command" else a.function.name
                     t_runs.append({"cmd": label, "result": res})
@@ -350,6 +380,7 @@ def chat():
             orc_messages.append({"role": "assistant", "tool_calls": [c.model_dump(exclude_none=True) for c in choice.message.tool_calls]})
             for call in choice.message.tool_calls:
                 args = json.loads(call.function.arguments or "{}")
+                log_tool_call(call.function.name, args)
                 if call.function.name == "make_plan":
                     plan_text = call.function.arguments or "{}"
                     orc_messages.append({"role": "tool", "tool_call_id": call.id, "name": "make_plan", "content": plan_text})
@@ -427,8 +458,9 @@ def chat():
     HISTORY.append({"role": "assistant", "content": "\n".join(all_plans)})
     if final_reply:
         HISTORY.append({"role": "assistant", "content": final_reply})
-    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(HISTORY, f, ensure_ascii=False, indent=2)
+    # with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+    #     json.dump(HISTORY, f, ensure_ascii=False, indent=2)
+    flush_history_to_disk()
 
     return jsonify({
         "plans": all_plans,
@@ -440,6 +472,9 @@ def chat():
 def terminal():
     cmd   = request.json["command"]
     out   = run_cmd(cmd)
+    log_tool_call("shell", {"command": cmd})
+    log_tool_call("shell_result", {"result": out})
+    flush_history_to_disk()
     return jsonify({"cmd": cmd, "result": out})
 
 # ---------- main ---------- #
