@@ -183,11 +183,13 @@ def chat():
 
     # ----- ask orchestrator for a plan -----
     planner_sys = (
-        "You are an orchestrator. Break down the user's request into tasks and "
-        "assign them to a number of agents not exceeding the provided worker "
-        "count. Respond ONLY with JSON like: "
+        "You are an orchestrator. Coder agents are independent and share no "
+        "memory. Each agent only sees its own task list. You have up to %d "
+        "workers available and must never exceed this number. When assigning "
+        "tasks do not rely on one agent continuing work of another unless you "
+        "explicitly provide the previous results. Respond ONLY with JSON like: "
         "{\"agents\":N,\"tasks\":[{\"agent\":1,\"desc\":\"task\"}]}"
-    )
+    ) % workers
     plan_schema = {
         "type": "object",
         "properties": {
@@ -216,82 +218,174 @@ def chat():
             "parameters": plan_schema,
         },
     }
-    resp = client.chat.completions.create(
-        model=orc_model,
-        messages=plan_messages,
-        tools=[plan_tool],
-        tool_choice={"type": "function", "function": {"name": "make_plan"}},
-    )
-    plan_text = "{}"
-    plan = {"agents": 1, "tasks": [{"agent": 1, "desc": user_msg}]}
-    if resp.choices and resp.choices[0].finish_reason == "tool_calls":
-        call = resp.choices[0].message.tool_calls[0]
-        plan_text = call.function.arguments or "{}"
-        try:
-            plan = json.loads(plan_text)
-        except Exception:
-            plan = {"agents": 1, "tasks": [{"agent": 1, "desc": user_msg}]}
-    else:
-        try:
-            plan_text = resp.choices[0].message.content
-            plan = json.loads(plan_text)
-        except Exception:
-            pass
+    orc_messages = plan_messages
+    all_plans: list[str] = []
+    all_agents: list[dict] = []
+    round_no = 0
+    while True:
+        resp = client.chat.completions.create(
+            model=orc_model,
+            messages=orc_messages,
+            tools=[plan_tool],
+            tool_choice={"type": "function", "function": {"name": "make_plan"}},
+        )
+        round_no += 1
+        plan_text = "{}"
+        plan = {"agents": 0, "tasks": []}
+        choice = resp.choices[0]
+        if choice.finish_reason == "tool_calls":
+            call = choice.message.tool_calls[0]
+            plan_text = call.function.arguments or "{}"
+            orc_messages.append({"role": "assistant", "tool_calls": [call.model_dump(exclude_none=True)]})
+            orc_messages.append({"role": "tool", "tool_call_id": call.id, "name": "make_plan", "content": plan_text})
+            try:
+                plan = json.loads(plan_text)
+            except Exception:
+                plan = {"agents": 0, "tasks": []}
+        else:
+            plan_text = choice.message.content or "{}"
+            orc_messages.append({"role": "assistant", "content": plan_text})
+            try:
+                plan = json.loads(plan_text)
+            except Exception:
+                plan = {"agents": 0, "tasks": []}
 
-    num_agents = min(int(plan.get("agents", 1)), workers)
-    agent_tasks = {i: [] for i in range(1, num_agents + 1)}
-    for t in plan.get("tasks", []):
-        aid = int(t.get("agent", 1))
-        if aid not in agent_tasks:
-            aid = 1
-        agent_tasks[aid].append(t.get("desc", ""))
+        all_plans.append(plan_text)
 
-    def run_agent(aid: int, tasks: list[str]):
-        """Run a coder agent on its assigned tasks."""
-        msgs = [
-            {
-                "role": "system",
-                "content": (
-                    "You are coder agent %d. Complete ONLY the following tasks in order:\n%s"
-                    % (aid, "\n".join(f"- {t}" for t in tasks))
-                ),
-            }
-        ]
-        t_runs = []
-        while True:
-            r = client.chat.completions.create(
-                model=coder_model, messages=msgs, tools=TOOLS, tool_choice="auto"
-            )
-            c = r.choices[0]
-            if c.finish_reason == "tool_calls":
-                for call in c.message.tool_calls:
-                    args = json.loads(call.function.arguments or "{}")
-                    result = TOOL_FUNCS[call.function.name](**args)
-                    label = (
-                        args.get("command")
-                        if call.function.name == "write_command"
-                        else call.function.name
-                    )
-                    t_runs.append({"cmd": label, "result": result})
-                    msgs.append({"role": "assistant", "tool_calls": [call.model_dump(exclude_none=True)]})
-                    msgs.append({"role": "tool", "tool_call_id": call.id, "name": label, "content": result})
-                continue
-            msgs.append({"role": "assistant", "content": c.message.content})
-            return {"id": aid, "reply": c.message.content, "tool_runs": t_runs, "messages": msgs}
+        if not plan.get("tasks") or plan.get("agents", 0) <= 0:
+            break
 
-    # run agents in parallel
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
-        futs = [ex.submit(run_agent, aid, tasks) for aid, tasks in agent_tasks.items() if tasks]
-        results = [f.result() for f in futs]
+        num_agents = min(int(plan.get("agents", 1)), workers)
+        agent_tasks = {i: [] for i in range(1, num_agents + 1)}
+        for t in plan.get("tasks", []):
+            aid = int(t.get("agent", 1))
+            if aid not in agent_tasks:
+                aid = 1
+            agent_tasks[aid].append(t.get("desc", ""))
 
-    # persist history: orchestrator plan + each agent conversation
-    HISTORY.append({"role": "assistant", "content": plan_text})
-    for r in results:
-        HISTORY.extend(r["messages"])
+        def run_agent(aid: int, tasks: list[str]):
+            msgs = [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are coder agent %d. Complete ONLY the following tasks in order:\n%s"
+                        % (aid, "\n".join(f"- {t}" for t in tasks))
+                    ),
+                }
+            ]
+            t_runs = []
+            while True:
+                r = client.chat.completions.create(model=coder_model, messages=msgs, tools=TOOLS, tool_choice="auto")
+                c = r.choices[0]
+                if c.finish_reason == "tool_calls":
+                    for call in c.message.tool_calls:
+                        args = json.loads(call.function.arguments or "{}")
+                        result = TOOL_FUNCS[call.function.name](**args)
+                        label = args.get("command") if call.function.name == "write_command" else call.function.name
+                        t_runs.append({"cmd": label, "result": result})
+                        msgs.append({"role": "assistant", "tool_calls": [call.model_dump(exclude_none=True)]})
+                        msgs.append({"role": "tool", "tool_call_id": call.id, "name": label, "content": result})
+                    continue
+                msgs.append({"role": "assistant", "content": c.message.content})
+                return {"id": aid, "reply": c.message.content, "tool_runs": t_runs, "messages": msgs, "round": round_no}
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+            futs = [ex.submit(run_agent, aid, tasks) for aid, tasks in agent_tasks.items() if tasks]
+            results = [f.result() for f in futs]
+
+        for r in results:
+            all_agents.append(r)
+            HISTORY.extend(r["messages"])
+
+        summary = "\n".join(f"Agent {r['id']} result: {r['reply']}" for r in results)
+        orc_messages.append({"role": "user", "content": summary})
+
+        if round_no >= 5:
+            break
+
+    HISTORY.append({"role": "assistant", "content": "\n".join(all_plans)})
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(HISTORY, f, ensure_ascii=False, indent=2)
 
-    return jsonify({"plan": plan_text, "agents": [{"id": r["id"], "reply": r["reply"], "tool_runs": r["tool_runs"]} for r in results]})
+    return jsonify({"plans": all_plans, "agents": [{"id": a["id"], "reply": a["reply"], "tool_runs": a["tool_runs"], "round": a["round"]} for a in all_agents]})
+
+#     resp = client.chat.completions.create(
+#         model=orc_model,
+#         messages=plan_messages,
+#         tools=[plan_tool],
+#         tool_choice={"type": "function", "function": {"name": "make_plan"}},
+#     )
+#     plan_text = "{}"
+#     plan = {"agents": 1, "tasks": [{"agent": 1, "desc": user_msg}]}
+#     if resp.choices and resp.choices[0].finish_reason == "tool_calls":
+#         call = resp.choices[0].message.tool_calls[0]
+#         plan_text = call.function.arguments or "{}"
+#         try:
+#             plan = json.loads(plan_text)
+#         except Exception:
+#             plan = {"agents": 1, "tasks": [{"agent": 1, "desc": user_msg}]}
+#     else:
+#         try:
+#             plan_text = resp.choices[0].message.content
+#             plan = json.loads(plan_text)
+#         except Exception:
+#             pass
+
+#     num_agents = min(int(plan.get("agents", 1)), workers)
+#     agent_tasks = {i: [] for i in range(1, num_agents + 1)}
+#     for t in plan.get("tasks", []):
+#         aid = int(t.get("agent", 1))
+#         if aid not in agent_tasks:
+#             aid = 1
+#         agent_tasks[aid].append(t.get("desc", ""))
+
+#     def run_agent(aid: int, tasks: list[str]):
+#         """Run a coder agent on its assigned tasks."""
+#         msgs = [
+#             {
+#                 "role": "system",
+#                 "content": (
+#                     "You are coder agent %d. Complete ONLY the following tasks in order:\n%s"
+#                     % (aid, "\n".join(f"- {t}" for t in tasks))
+#                 ),
+#             }
+#         ]
+#         t_runs = []
+#         while True:
+#             r = client.chat.completions.create(
+#                 model=coder_model, messages=msgs, tools=TOOLS, tool_choice="auto"
+#             )
+#             c = r.choices[0]
+#             if c.finish_reason == "tool_calls":
+#                 for call in c.message.tool_calls:
+#                     args = json.loads(call.function.arguments or "{}")
+#                     result = TOOL_FUNCS[call.function.name](**args)
+#                     label = (
+#                         args.get("command")
+#                         if call.function.name == "write_command"
+#                         else call.function.name
+#                     )
+#                     t_runs.append({"cmd": label, "result": result})
+#                     msgs.append({"role": "assistant", "tool_calls": [call.model_dump(exclude_none=True)]})
+#                     msgs.append({"role": "tool", "tool_call_id": call.id, "name": label, "content": result})
+#                 continue
+#             msgs.append({"role": "assistant", "content": c.message.content})
+#             return {"id": aid, "reply": c.message.content, "tool_runs": t_runs, "messages": msgs}
+
+#     # run agents in parallel
+#     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+#         futs = [ex.submit(run_agent, aid, tasks) for aid, tasks in agent_tasks.items() if tasks]
+#         results = [f.result() for f in futs]
+
+#     # persist history: orchestrator plan + each agent conversation
+#     HISTORY.append({"role": "assistant", "content": plan_text})
+#     for r in results:
+#         HISTORY.extend(r["messages"])
+#     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+#         json.dump(HISTORY, f, ensure_ascii=False, indent=2)
+
+#     return jsonify({"plan": plan_text, "agents": [{"id": r["id"], "reply": r["reply"], "tool_runs": r["tool_runs"]} for r in results]})
+
 
 @app.route("/api/command", methods=["POST"])
 def terminal():

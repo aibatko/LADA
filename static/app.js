@@ -34,17 +34,18 @@ function bubble(text, cls, pane, html=false){
   return d;
 }
 
-function showPlan(planStr){
+function showPlan(planStr, round){
   try{
     const plan = JSON.parse(planStr);
-    let html = `<strong>Plan:</strong><br>Agents: ${plan.agents}<ul>`;
+    let html = `<strong>Plan ${round}:</strong><br>Agents: ${plan.agents}<ul>`;
+
     plan.tasks.forEach(t=>{ html += `<li>[Agent ${t.agent}] ${t.desc}</li>`; });
     html += '</ul>';
     bubble(html,'ai',chatPane,true);
     for(let i=1;i<=plan.agents;i++){
       const wrap = bubble(`Agent ${i}: `,'ai',chatPane,true);
       const prog = document.createElement('progress');
-      prog.id = `agent${i}-prog`;
+      prog.id = `round${round}-agent${i}-prog`;
       prog.max = 100;
       prog.value = 0;
       wrap.appendChild(prog);
@@ -68,13 +69,13 @@ async function sendChat(){
     workers: parseInt(document.getElementById("workers").value,10)
   });
 
-  if(data.plan) showPlan(data.plan);
+  (data.plans||[]).forEach((p,i)=> showPlan(p,i+1));
   (data.agents||[]).forEach(a=>{
     a.tool_runs.forEach(t=>{
       bubble(`[A${a.id}] $ ${t.cmd}\n${t.result}`,"code",termPane);
     });
-    const b = bubble(`[Agent ${a.id}] ${a.reply}`,"ai",chatPane);
-    const prog = document.getElementById(`agent${a.id}-prog`);
+    bubble(`[Agent ${a.id}] ${a.reply}`,"ai",chatPane);
+    const prog = document.getElementById(`round${a.round}-agent${a.id}-prog`);
     if(prog) prog.value = 100;
   });
 }
