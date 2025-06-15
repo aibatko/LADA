@@ -208,16 +208,35 @@ def chat():
     }
 
     plan_messages = [{"role": "system", "content": planner_sys}] + messages
+    plan_tool = {
+        "type": "function",
+        "function": {
+            "name": "make_plan",
+            "description": "Return a plan for the requested tasks.",
+            "parameters": plan_schema,
+        },
+    }
     resp = client.chat.completions.create(
         model=orc_model,
         messages=plan_messages,
-        response_format={"type": "json_object", "schema": plan_schema},
+        tools=[plan_tool],
+        tool_choice={"type": "function", "function": {"name": "make_plan"}},
     )
-    plan_text = resp.choices[0].message.content
-    try:
-        plan = json.loads(plan_text)
-    except Exception:
-        plan = {"agents": 1, "tasks": [{"agent": 1, "desc": user_msg}]}
+    plan_text = "{}"
+    plan = {"agents": 1, "tasks": [{"agent": 1, "desc": user_msg}]}
+    if resp.choices and resp.choices[0].finish_reason == "tool_calls":
+        call = resp.choices[0].message.tool_calls[0]
+        plan_text = call.function.arguments or "{}"
+        try:
+            plan = json.loads(plan_text)
+        except Exception:
+            plan = {"agents": 1, "tasks": [{"agent": 1, "desc": user_msg}]}
+    else:
+        try:
+            plan_text = resp.choices[0].message.content
+            plan = json.loads(plan_text)
+        except Exception:
+            pass
 
     num_agents = min(int(plan.get("agents", 1)), workers)
     agent_tasks = {i: [] for i in range(1, num_agents + 1)}
