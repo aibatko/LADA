@@ -221,7 +221,7 @@ def chat():
         "You are a quick answering **router**. "
         "If the user's last message can be answered quickly, call the `route` function with "
         "`{\"action\":\"answer\",\"answer\":\"…\"}`. "
-        "Otherwise call `route` with `{\"action\":\"orchestrate\"}` to escalate."
+        "Otherwise if the task requires careful planning, multiple steps or actions call `route` with `{\"action\":\"orchestrate\"}` to hand off the task to a bigger model with more tools and resources."
     )
 
 
