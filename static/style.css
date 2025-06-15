@@ -1,7 +1,7 @@
 /* ---- global ---- */
 :root{
   --bg1:#0f172a; --bg2:#1e293b; --accent:#38bdf8;
-  --msg:#e2e8f0; --user:#f0abfc; --term:#16f75f;
+  --msg:#e2e8f0; --user:#f0abfc; --term:#16f75f; --orc:#f8e36b;
 }
 *{box-sizing:border-box}
 body{
@@ -48,6 +48,7 @@ main{
 .ai   {background:rgba(56,189,248,.15)}
 .user {align-self:flex-end;background:rgba(240,171,252,.2)}
 .code {color:var(--term)}
+.orc  {background:rgba(248,227,107,.2)}
 footer{display:grid;grid-template-columns:1fr auto 1fr auto;gap:0.5rem;padding:1rem;background:#0b1220}
 textarea{resize:none;height:3rem}
 
