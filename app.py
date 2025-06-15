@@ -118,6 +118,35 @@ TOOLS = [
     }
 ]
 
+# ---------- router JSON-schema ---------- #
+# Let the LLM decide in one structured call whether to answer directly
+# or escalate to the orchestrator, and (if answering) what to say.
+DECISION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "action": {
+            "type": "string",
+            "enum": ["answer", "orchestrate"],
+            "description": "Choose 'answer' to respond immediately, or 'orchestrate' to hand off."
+        },
+        "answer": {
+            "type": "string",
+            "description": "Natural-language reply to the user if action == 'answer'."
+        }
+    },
+    "required": ["action"]
+}
+
+DECISION_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "route",
+        "description": "High-level routing decision for the assistant.",
+        "parameters": DECISION_SCHEMA,
+    },
+}
+
+
 def write_file(filename, content):       # ↙ simple helpers
     path = pathlib.Path(filename).expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -181,27 +210,55 @@ def chat():
 
     HISTORY.append({"role": "user", "content": user_msg})
 
+    # router agent 
     # ----- quick check with coder -----
+    # coder_sys = (
+    #     "You are a quick answering router agent. You need to decide if the last user message requires coding, multiple steps or careful reasoning - if so invoke the ORCHESTRATOR model which is larger, has more resources and can assign smaller agents onto many tasks. If the user is asking for a simple command or wants a quick answer, reply directly. "
+        # "If it can be answered directly or with a single command, do so using the provided tools. "
+        # "Otherwise reply with 'ORCHESTRATE'."
+    # )
     coder_sys = (
-        "You are the coder agent. Decide if the last user request requires a plan with multiple agents. "
-        "If it can be answered directly or with a single command, do so using the provided tools. "
-        "Otherwise reply with 'ORCHESTRATE'."
+        "You are a quick answering **router**. "
+        "If the user's last message can be answered quickly, call the `route` function with "
+        "`{\"action\":\"answer\",\"answer\":\"…\"}`. "
+        "Otherwise call `route` with `{\"action\":\"orchestrate\"}` to escalate."
     )
+
 
     def quick_coder():
         msgs = [{"role": "system", "content": coder_sys}] + HISTORY
         t_runs = []
         while True:
-            r = coder_client.chat.completions.create(model=coder_model, messages=msgs, tools=TOOLS, tool_choice="auto")
+            # r = coder_client.chat.completions.create(model=coder_model, messages=msgs, tools=TOOLS, tool_choice="auto")
+            r = coder_client.chat.completions.create(
+                model=coder_model,
+                messages=msgs,
+                tools=TOOLS + [DECISION_TOOL],
+                tool_choice="auto",
+            )
             c = r.choices[0]
             if c.finish_reason == "tool_calls":
                 msgs.append({"role": "assistant", "tool_calls": [tc.model_dump(exclude_none=True) for tc in c.message.tool_calls]})
                 for a in c.message.tool_calls:
                     a_args = json.loads(a.function.arguments or "{}")
+                    # res = TOOL_FUNCS[a.function.name](**a_args)
+                    # label = a_args.get("command") if a.function.name == "write_command" else a.function.name
+                    # t_runs.append({"cmd": label, "result": res})
+                    # msgs.append({"role": "tool", "tool_call_id": a.id, "name": label, "content": res})
+                    # New structured decision
+                    if a.function.name == "route":
+                        msgs.append({"role": "tool", "tool_call_id": a.id, "name": "route", "content": json.dumps(a_args)})
+                        if a_args.get("action") == "answer":
+                            return a_args.get("answer", "").strip(), t_runs, msgs
+                        else:  # 'orchestrate'
+                            return "ORCHESTRATE", t_runs, msgs
+
+                    # Existing file/command tools stay unchanged
                     res = TOOL_FUNCS[a.function.name](**a_args)
                     label = a_args.get("command") if a.function.name == "write_command" else a.function.name
                     t_runs.append({"cmd": label, "result": res})
                     msgs.append({"role": "tool", "tool_call_id": a.id, "name": label, "content": res})
+
                 continue
             msgs.append({"role": "assistant", "content": c.message.content})
             return c.message.content.strip(), t_runs, msgs
