@@ -218,7 +218,17 @@ def history():
 
 @app.route("/api/chat", methods=["POST"])
 def chat():
-    data       = request.json
+    data = request.json
+    socketio.start_background_task(_background_chat, data)
+    return jsonify({"status": "processing"})
+
+
+def _background_chat(data: dict):
+    result = process_chat(data)
+    socketio.emit('chat_complete', result)
+
+
+def process_chat(data: dict):
     orc_provider   = data["orc_provider"]
     coder_provider = data["coder_provider"]
     orc_model  = data["orchestrator_model"]
@@ -554,11 +564,19 @@ def chat():
     #     json.dump(HISTORY, f, ensure_ascii=False, indent=2)
     flush_history_to_disk()
 
-    return jsonify({
+    return {
         "plans": all_plans,
         "orchestrator": {"reply": final_reply, "tool_runs": orc_tool_runs},
-        "agents": [{"id": a["id"], "reply": a["reply"], "tool_runs": a["tool_runs"], "round": a["round"]} for a in all_agents]
-    })
+        "agents": [
+            {
+                "id": a["id"],
+                "reply": a["reply"],
+                "tool_runs": a["tool_runs"],
+                "round": a["round"],
+            }
+            for a in all_agents
+        ],
+    }
 
 @app.route("/api/command", methods=["POST"])
 def terminal():

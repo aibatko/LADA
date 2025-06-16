@@ -27,6 +27,10 @@ socket.on('agent_result', a => {
   bubble(`[Agent ${a.id}] ${a.reply}`, 'ai', chatPane);
 });
 
+socket.on('chat_complete', data => {
+  handleChatResult(data);
+});
+
 async function loadHistory(){
   const r = await fetch("/api/history");
   const hist = await r.json();
@@ -73,22 +77,7 @@ function showPlan(planStr, round){
   }
 }
 
-/* ---------- CHAT ---------- */
-const chatInput  = document.getElementById("chatInput");
-async function sendChat(){
-  const msg = chatInput.value.trim(); if(!msg) return;
-  bubble(msg,"user",chatPane); chatInput.value="";
-
-  const data = await post("/api/chat",{
-    prompt:  msg,
-    orc_provider:   document.getElementById("orcProvider").value,
-    coder_provider: document.getElementById("coderProvider").value,
-    orchestrator_model: document.getElementById("orcModel").value,
-    coder_model:        document.getElementById("coderModel").value,
-    workers: parseInt(document.getElementById("workers").value,10),
-    orc_enabled: orcEnabled
-  });
-
+function handleChatResult(data){
   (data.plans||[]).forEach((p,i)=>{
     if(!shownPlans.has(i+1)){
       shownPlans.add(i+1);
@@ -119,6 +108,23 @@ async function sendChat(){
   if(data.orchestrator && data.orchestrator.reply){
     bubble(`[Orchestrator] ${data.orchestrator.reply}`,"orc",chatPane);
   }
+}
+
+/* ---------- CHAT ---------- */
+const chatInput  = document.getElementById("chatInput");
+async function sendChat(){
+  const msg = chatInput.value.trim(); if(!msg) return;
+  bubble(msg,"user",chatPane); chatInput.value="";
+
+  await post("/api/chat",{
+    prompt:  msg,
+    orc_provider:   document.getElementById("orcProvider").value,
+    coder_provider: document.getElementById("coderProvider").value,
+    orchestrator_model: document.getElementById("orcModel").value,
+    coder_model:        document.getElementById("coderModel").value,
+    workers: parseInt(document.getElementById("workers").value,10),
+    orc_enabled: orcEnabled
+  });
 }
 document.getElementById("sendChat").onclick = sendChat;
 chatInput.addEventListener("keydown", e => {
