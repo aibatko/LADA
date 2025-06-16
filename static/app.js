@@ -45,7 +45,7 @@ socket.on('orc_reply', d => {
 
 socket.on('coder_reply', d => {
   if(shownCoderReplies.has(d.reply)) return;
-  shownCoderReplies.add(d.reply);
+  shownCoderReplies.add(d.reply)
   bubble(`[Coder] ${d.reply}`, 'ai', chatPane);
 });
 
