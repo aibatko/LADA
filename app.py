@@ -224,6 +224,7 @@ def chat():
     orc_model  = data["orchestrator_model"]
     coder_model= data["coder_model"]
     workers    = int(data.get("workers", 2))
+    orc_enabled = data.get("orc_enabled", True)
     user_msg   = data["prompt"]
 
     orc_client   = get_client(orc_provider)
@@ -309,16 +310,19 @@ def chat():
     decision_args = json.loads(router_call.function.arguments or "{}")
     decision = decision_args.get("action", "hand_off")
 
-    # If the lightweight coder should answer immediately ---------------------- #
-    if decision == "answer":
+
+    # If the lightweight coder should answer immediately or the orchestrator is disabled
+    if decision == "answer" or not orc_enabled:
+        target_client = coder_client if decision == "answer" else orc_client
+        target_model = coder_model if decision == "answer" else orc_model
         coder_messages = (
             [{"role": "system", "content": "You are a helpful coding assistant."}]
             + HISTORY
         )
         coder_tool_runs = []
         while True:
-            c_resp = coder_client.chat.completions.create(
-                model=coder_model,
+            c_resp = target_client.chat.completions.create(
+                model=target_model,
                 messages=coder_messages,
                 tools=TOOLS,
                 tool_choice="auto",
@@ -347,15 +351,24 @@ def chat():
 
         add_history("assistant", final_answer)
         flush_history_to_disk()
-        return jsonify(
-            {
-                "plans": [],
-                "coder": {"reply": final_answer, "tool_runs": coder_tool_runs},
-                "orchestrator": None,
-                "agents": [],
-            }
-        )
-
+        if decision == "answer":
+            return jsonify(
+                {
+                    "plans": [],
+                    "coder": {"reply": final_answer, "tool_runs": coder_tool_runs},
+                    "orchestrator": None,
+                    "agents": [],
+                }
+            )
+        else:
+            return jsonify(
+                {
+                    "plans": [],
+                    "coder": None,
+                    "orchestrator": {"reply": final_answer, "tool_runs": coder_tool_runs},
+                    "agents": [],
+                }
+            )
     # ----- ask orchestrator for a plan -----
     planner_sys = (
         # "You are an orchestrator. Coder agents are independent and share no "
