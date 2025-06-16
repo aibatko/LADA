@@ -384,11 +384,12 @@ def chat():
         " Before creating smaller agents, create a detailed plan for everything that needs to be done. "
         " Right now you can have up to %d workers for 1 iteration. "
         " When you spawn a new agent it has no memory of previous tasks so you should give it a detailed prompt and list what it needs to do. "
-        " Your agents work in parallel and can execute tasks independently but that can lead to a conflict when working on the same file so you should avoid that. "
-        " You also have the ability to execute more iterations after one is compelte - if a process requires more steps than your available workers or needs something to be done in sequence, you can do that by creating agents after you got feedback from the previous ones.\n\n "
+        " Your agents work in parallel and can execute tasks independently but won't be able to work on the same file. "
+        " You also have the ability to execute more iterations after one is compelte - if a process requires more steps than your available workers or needs something to be done in sequence like writing a file then reading it, you can do that by creating more agents after you got feedback from the previous ones.\n\n "
         "When assigning tasks do not rely on one agent continuing work of another unless you "
         "explicitly provide the previous results. Respond ONLY with JSON like: "
         "{\"agents\":N,\"tasks\":[{\"agent\":1,\"desc\":\"task\"}]}"
+        " When one a iteration is over and you have the results from all agents and think that the process is complete, report to the user with summary of what has been done. "
         " This is the history of the conversation so far: \n"
     ) % workers
     plan_schema = {
