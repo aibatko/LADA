@@ -216,9 +216,8 @@ def history():
     """Return full conversation history."""
     return jsonify(HISTORY)
 
-@app.route("/api/chat", methods=["POST"])
-def chat():
-    data       = request.json
+def process_chat(data: dict):
+    """Heavy chat handler running in a background task."""
     orc_provider   = data["orc_provider"]
     coder_provider = data["coder_provider"]
     orc_model  = data["orchestrator_model"]
@@ -234,7 +233,7 @@ def chat():
     # HISTORY.append({"role": "user", "content": user_msg})
     add_history("user", user_msg)
 
-    # router agent 
+    # router agent
     # ----- quick check with coder -----
     # coder_sys = (
     #     "You are a quick answering **router**. "
@@ -554,11 +553,26 @@ def chat():
     #     json.dump(HISTORY, f, ensure_ascii=False, indent=2)
     flush_history_to_disk()
 
-    return jsonify({
+    socketio.emit('chat_done', {
         "plans": all_plans,
         "orchestrator": {"reply": final_reply, "tool_runs": orc_tool_runs},
-        "agents": [{"id": a["id"], "reply": a["reply"], "tool_runs": a["tool_runs"], "round": a["round"]} for a in all_agents]
+        "agents": [
+            {
+                "id": a["id"],
+                "reply": a["reply"],
+                "tool_runs": a["tool_runs"],
+                "round": a["round"],
+            }
+            for a in all_agents
+        ],
     })
+
+
+@app.route("/api/chat", methods=["POST"])
+def chat():
+    """Start chat processing in the background and return immediately."""
+    socketio.start_background_task(process_chat, request.json)
+    return jsonify({"status": "processing"})
 
 @app.route("/api/command", methods=["POST"])
 def terminal():
