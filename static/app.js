@@ -3,6 +3,9 @@ const termPane = document.getElementById("termPane");
 const socket = window.io ? io() : { on: ()=>{}, emit: ()=>{} };
 const shownPlans = new Set();
 const shownAgents = new Set();
+const shownToolRuns = new Set();
+const shownCoderReplies = new Set();
+const shownOrcReplies = new Set();
 let orcEnabled = true;
 const orcToggle = document.getElementById("orcToggle");
 orcToggle.onclick = () => {
@@ -25,6 +28,25 @@ socket.on('agent_result', a => {
     bubble(`[A${a.id}] $ ${t.cmd}\n${t.result}`, 'code', termPane);
   });
   bubble(`[Agent ${a.id}] ${a.reply}`, 'ai', chatPane);
+});
+
+socket.on('tool_run', t => {
+  const key = `${t.who}-${t.round||0}-${t.cmd}-${t.result}`;
+  if(shownToolRuns.has(key)) return;
+  shownToolRuns.add(key);
+  bubble(`[${t.who}] $ ${t.cmd}\n${t.result}`, 'code', termPane);
+});
+
+socket.on('orc_reply', d => {
+  if(shownOrcReplies.has(d.reply)) return;
+  shownOrcReplies.add(d.reply);
+  bubble(`[Orchestrator] ${d.reply}`, 'orc', chatPane);
+});
+
+socket.on('coder_reply', d => {
+  if(shownCoderReplies.has(d.reply)) return;
+  shownCoderReplies.add(d.reply);
+  bubble(`[Coder] ${d.reply}`, 'ai', chatPane);
 });
 
 async function loadHistory(){
@@ -97,13 +119,21 @@ async function sendChat(){
   });
   if(data.coder){
     (data.coder.tool_runs||[]).forEach(t=>{
+      const key = `Coder-0-${t.cmd}-${t.result}`;
+      if(shownToolRuns.has(key)) return;
+      shownToolRuns.add(key);
       bubble(`[Coder] $ ${t.cmd}\n${t.result}`,"code",termPane);
     });
-    if(data.coder.reply)
+    if(data.coder.reply && !shownCoderReplies.has(data.coder.reply)){
+      shownCoderReplies.add(data.coder.reply);
       bubble(`[Coder] ${data.coder.reply}`,"ai",chatPane);
+    }
   }
   if(data.orchestrator){
     (data.orchestrator.tool_runs||[]).forEach(t=>{
+      const key = `Orchestrator-${t.cmd}-${t.result}`;
+      if(shownToolRuns.has(key)) return;
+      shownToolRuns.add(key);
       bubble(`[Orc] $ ${t.cmd}\n${t.result}`,"code",termPane);
     });
   }
@@ -112,11 +142,15 @@ async function sendChat(){
     if(shownAgents.has(key)) return;
     shownAgents.add(key);
     a.tool_runs.forEach(t=>{
+      const tkey = `A${a.id}-${a.round}-${t.cmd}-${t.result}`;
+      if(shownToolRuns.has(tkey)) return;
+      shownToolRuns.add(tkey);
       bubble(`[A${a.id}] $ ${t.cmd}\n${t.result}`,"code",termPane);
     });
     bubble(`[Agent ${a.id}] ${a.reply}`,"ai",chatPane);
   });
-  if(data.orchestrator && data.orchestrator.reply){
+  if(data.orchestrator && data.orchestrator.reply && !shownOrcReplies.has(data.orchestrator.reply)){
+    shownOrcReplies.add(data.orchestrator.reply);
     bubble(`[Orchestrator] ${data.orchestrator.reply}`,"orc",chatPane);
   }
 }
