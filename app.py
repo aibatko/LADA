@@ -216,9 +216,7 @@ def history():
     """Return full conversation history."""
     return jsonify(HISTORY)
 
-@app.route("/api/chat", methods=["POST"])
-def chat():
-    data       = request.json
+def run_chat(data, sid=None):
     orc_provider   = data["orc_provider"]
     coder_provider = data["coder_provider"]
     orc_model  = data["orchestrator_model"]
@@ -351,24 +349,17 @@ def chat():
 
         add_history("assistant", final_answer)
         flush_history_to_disk()
-        if decision == "answer":
-            return jsonify(
-                {
-                    "plans": [],
-                    "coder": {"reply": final_answer, "tool_runs": coder_tool_runs},
-                    "orchestrator": None,
-                    "agents": [],
-                }
-            )
-        else:
-            return jsonify(
-                {
-                    "plans": [],
-                    "coder": None,
-                    "orchestrator": {"reply": final_answer, "tool_runs": coder_tool_runs},
-                    "agents": [],
-                }
-            )
+    result = {
+        "plans": [],
+        "coder": {"reply": final_answer, "tool_runs": coder_tool_runs} if decision == "answer" else None,
+        "orchestrator": None if decision == "answer" else {"reply": final_answer, "tool_runs": coder_tool_runs},
+        "agents": [],
+    }
+    if sid:
+        socketio.emit('chat_complete', result, to=sid)
+    else:
+        socketio.emit('chat_complete', result)
+    return result
     # ----- ask orchestrator for a plan -----
     planner_sys = (
         # "You are an orchestrator. Coder agents are independent and share no "
@@ -477,7 +468,10 @@ def chat():
                     except Exception:
                         plan = {"agents": 0, "tasks": []}
                     all_plans.append(plan_text)
-                    socketio.emit('plan', {'plan': plan_text, 'round': round_no})
+                    if sid:
+                        socketio.emit('plan', {'plan': plan_text, 'round': round_no}, to=sid)
+                    else:
+                        socketio.emit('plan', {'plan': plan_text, 'round': round_no})
                     if plan.get("tasks") and plan.get("agents", 0) > 0:
                         num_agents = min(int(plan.get("agents", 1)), workers)
                         agent_tasks = {i: [] for i in range(1, num_agents + 1)}
@@ -493,10 +487,16 @@ def chat():
                             all_agents.append(r)
                             # HISTORY.extend(r["messages"])
                             add_history("assistant", r["reply"])
-                            socketio.emit('agent_result', {
-                                'id': r['id'], 'reply': r['reply'],
-                                'tool_runs': r['tool_runs'], 'round': r['round']
-                            })
+                            if sid:
+                                socketio.emit('agent_result', {
+                                    'id': r['id'], 'reply': r['reply'],
+                                    'tool_runs': r['tool_runs'], 'round': r['round']
+                                }, to=sid)
+                            else:
+                                socketio.emit('agent_result', {
+                                    'id': r['id'], 'reply': r['reply'],
+                                    'tool_runs': r['tool_runs'], 'round': r['round']
+                                })
                         summary = "\n".join(f"Agent {r['id']} result: {r['reply']}" for r in results)
                         orc_messages.append({"role": "user", "content": summary})
                     continue
@@ -515,7 +515,10 @@ def chat():
 
         if isinstance(plan, dict) and "tasks" in plan and "agents" in plan:
             all_plans.append(text)
-            socketio.emit('plan', {'plan': text, 'round': round_no})
+            if sid:
+                socketio.emit('plan', {'plan': text, 'round': round_no}, to=sid)
+            else:
+                socketio.emit('plan', {'plan': text, 'round': round_no})
             if plan.get("tasks") and plan.get("agents", 0) > 0:
                 num_agents = min(int(plan.get("agents", 1)), workers)
                 agent_tasks = {i: [] for i in range(1, num_agents + 1)}
@@ -531,10 +534,16 @@ def chat():
                     all_agents.append(r)
                     # HISTORY.extend(r["messages"])
                     add_history("assistant", r["reply"])
-                    socketio.emit('agent_result', {
-                        'id': r['id'], 'reply': r['reply'],
-                        'tool_runs': r['tool_runs'], 'round': r['round']
-                    })
+                    if sid:
+                        socketio.emit('agent_result', {
+                            'id': r['id'], 'reply': r['reply'],
+                            'tool_runs': r['tool_runs'], 'round': r['round']
+                        }, to=sid)
+                    else:
+                        socketio.emit('agent_result', {
+                            'id': r['id'], 'reply': r['reply'],
+                            'tool_runs': r['tool_runs'], 'round': r['round']
+                        })
                 summary = "\n".join(f"Agent {r['id']} result: {r['reply']}" for r in results)
                 orc_messages.append({"role": "user", "content": summary})
                 continue
@@ -554,11 +563,27 @@ def chat():
     #     json.dump(HISTORY, f, ensure_ascii=False, indent=2)
     flush_history_to_disk()
 
-    return jsonify({
+    result = {
         "plans": all_plans,
         "orchestrator": {"reply": final_reply, "tool_runs": orc_tool_runs},
         "agents": [{"id": a["id"], "reply": a["reply"], "tool_runs": a["tool_runs"], "round": a["round"]} for a in all_agents]
-    })
+    }
+    if sid:
+        socketio.emit('chat_complete', result, to=sid)
+    else:
+        socketio.emit('chat_complete', result)
+    return result
+
+@app.route("/api/chat", methods=["POST"])
+def chat():
+    data = request.json
+    sid = data.get("sid")
+    if sid:
+        socketio.start_background_task(run_chat, data, sid)
+        return jsonify({"status": "processing"})
+    else:
+        result = run_chat(data)
+        return jsonify(result)
 
 @app.route("/api/command", methods=["POST"])
 def terminal():
