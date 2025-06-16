@@ -339,6 +339,10 @@ def chat():
                         else tc.function.name
                     )
                     coder_tool_runs.append({"cmd": label, "result": res})
+                    socketio.emit('tool_run', {
+                        'who': 'Coder' if decision == 'answer' else 'Orchestrator',
+                        'cmd': label, 'result': res
+                    })
                     coder_messages.extend(
                         [
                             {"role": "assistant", "tool_calls": [tc.model_dump(exclude_none=True)]},
@@ -349,6 +353,10 @@ def chat():
             final_answer = c_choice.message.content.strip()
             break
 
+        socketio.emit(
+            'coder_reply' if decision == 'answer' else 'orc_reply',
+            {'reply': final_answer}
+        )
         add_history("assistant", final_answer)
         flush_history_to_disk()
         if decision == "answer":
@@ -440,6 +448,10 @@ def chat():
                     res = TOOL_FUNCS[a.function.name](**a_args)
                     label = a_args.get("command") if a.function.name == "write_command" else a.function.name
                     t_runs.append({"cmd": label, "result": res})
+                    socketio.emit('tool_run', {
+                        'who': f'A{aid}', 'cmd': label,
+                        'result': res, 'round': round_no
+                    })
                     msgs.append({"role": "assistant", "tool_calls": [a.model_dump(exclude_none=True)]})
                     msgs.append({"role": "tool", "tool_call_id": a.id, "name": label, "content": res})
                 continue
@@ -504,6 +516,12 @@ def chat():
                     res = TOOL_FUNCS[call.function.name](**args)
                     label = args.get("command") if call.function.name == "write_command" else call.function.name
                     orc_tool_runs.append({"cmd": label, "result": res})
+                    socketio.emit('tool_run', {
+                        'who': 'Orchestrator',
+                        'cmd': label,
+                        'result': res,
+                        'round': round_no
+                    })
                     orc_messages.append({"role": "tool", "tool_call_id": call.id, "name": label, "content": res})
             continue
 
@@ -548,7 +566,7 @@ def chat():
     # HISTORY.append({"role": "assistant", "content": "\n".join(all_plans)})
     add_history("assistant", "\n".join(all_plans))
     if final_reply:
-        # HISTORY.append({"role": "assistant", "content": final_reply})
+        socketio.emit('orc_reply', {'reply': final_reply})
         add_history("assistant", final_reply)
     # with open(HISTORY_FILE, "w", encoding="utf-8") as f:
     #     json.dump(HISTORY, f, ensure_ascii=False, indent=2)

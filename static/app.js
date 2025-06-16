@@ -27,6 +27,18 @@ socket.on('agent_result', a => {
   bubble(`[Agent ${a.id}] ${a.reply}`, 'ai', chatPane);
 });
 
+socket.on('tool_run', t => {
+  bubble(`[${t.who}] $ ${t.cmd}\n${t.result}`, 'code', termPane);
+});
+
+socket.on('orc_reply', d => {
+  bubble(`[Orchestrator] ${d.reply}`, 'orc', chatPane);
+});
+
+socket.on('coder_reply', d => {
+  bubble(`[Coder] ${d.reply}`, 'ai', chatPane);
+});
+
 async function loadHistory(){
   const r = await fetch("/api/history");
   const hist = await r.json();
@@ -95,30 +107,7 @@ async function sendChat(){
       showPlan(p,i+1);
     }
   });
-  if(data.coder){
-    (data.coder.tool_runs||[]).forEach(t=>{
-      bubble(`[Coder] $ ${t.cmd}\n${t.result}`,"code",termPane);
-    });
-    if(data.coder.reply)
-      bubble(`[Coder] ${data.coder.reply}`,"ai",chatPane);
-  }
-  if(data.orchestrator){
-    (data.orchestrator.tool_runs||[]).forEach(t=>{
-      bubble(`[Orc] $ ${t.cmd}\n${t.result}`,"code",termPane);
-    });
-  }
-  (data.agents||[]).forEach(a=>{
-    const key = `${a.round}-${a.id}`;
-    if(shownAgents.has(key)) return;
-    shownAgents.add(key);
-    a.tool_runs.forEach(t=>{
-      bubble(`[A${a.id}] $ ${t.cmd}\n${t.result}`,"code",termPane);
-    });
-    bubble(`[Agent ${a.id}] ${a.reply}`,"ai",chatPane);
-  });
-  if(data.orchestrator && data.orchestrator.reply){
-    bubble(`[Orchestrator] ${data.orchestrator.reply}`,"orc",chatPane);
-  }
+  // Subsequent results arrive through WebSocket events
 }
 document.getElementById("sendChat").onclick = sendChat;
 chatInput.addEventListener("keydown", e => {
