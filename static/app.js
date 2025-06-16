@@ -4,10 +4,16 @@ const socket = window.io ? io() : { on: ()=>{}, emit: ()=>{} };
 const shownPlans = new Set();
 const shownAgents = new Set();
 let orcEnabled = true;
+let debugEnabled = false;
 const orcToggle = document.getElementById("orcToggle");
+const debugToggle = document.getElementById("debugToggle");
 orcToggle.onclick = () => {
   orcEnabled = !orcEnabled;
   orcToggle.textContent = `Orchestrator ${orcEnabled ? 'ON' : 'OFF'}`;
+};
+debugToggle.onclick = () => {
+  debugEnabled = !debugEnabled;
+  debugToggle.textContent = `Debug ${debugEnabled ? 'ON' : 'OFF'}`;
 };
 
 socket.on('plan', d => {
@@ -18,6 +24,7 @@ socket.on('plan', d => {
 });
 
 socket.on('agent_result', a => {
+  if(!debugEnabled) return;
   const key = `${a.round}-${a.id}`;
   if(shownAgents.has(key)) return;
   shownAgents.add(key);
@@ -25,6 +32,39 @@ socket.on('agent_result', a => {
     bubble(`[A${a.id}] $ ${t.cmd}\n${t.result}`, 'code', termPane);
   });
   bubble(`[Agent ${a.id}] ${a.reply}`, 'ai', chatPane);
+});
+
+socket.on('final', data => {
+  (data.plans||[]).forEach((p,i)=>{
+    if(!shownPlans.has(i+1)){
+      shownPlans.add(i+1);
+      showPlan(p,i+1);
+    }
+  });
+  if(data.coder){
+    (data.coder.tool_runs||[]).forEach(t=>{
+      bubble(`[Coder] $ ${t.cmd}\n${t.result}`, 'code', termPane);
+    });
+    if(data.coder.reply)
+      bubble(`[Coder] ${data.coder.reply}`, 'ai', chatPane);
+  }
+  if(data.orchestrator){
+    (data.orchestrator.tool_runs||[]).forEach(t=>{
+      bubble(`[Orc] $ ${t.cmd}\n${t.result}`, 'code', termPane);
+    });
+    if(data.orchestrator.reply)
+      bubble(`[Orchestrator] ${data.orchestrator.reply}`, 'orc', chatPane);
+  }
+  (data.agents||[]).forEach(a=>{
+    const key = `${a.round}-${a.id}`;
+    if(shownAgents.has(key)) return;
+    shownAgents.add(key);
+    a.tool_runs.forEach(t=>{
+      bubble(`[A${a.id}] $ ${t.cmd}\n${t.result}`, 'code', termPane);
+    });
+    if(debugEnabled)
+      bubble(`[Agent ${a.id}] ${a.reply}`, 'ai', chatPane);
+  });
 });
 
 async function loadHistory(){
@@ -79,7 +119,7 @@ async function sendChat(){
   const msg = chatInput.value.trim(); if(!msg) return;
   bubble(msg,"user",chatPane); chatInput.value="";
 
-  const data = await post("/api/chat",{
+  await post("/api/chat",{
     prompt:  msg,
     orc_provider:   document.getElementById("orcProvider").value,
     coder_provider: document.getElementById("coderProvider").value,
@@ -88,37 +128,6 @@ async function sendChat(){
     workers: parseInt(document.getElementById("workers").value,10),
     orc_enabled: orcEnabled
   });
-
-  (data.plans||[]).forEach((p,i)=>{
-    if(!shownPlans.has(i+1)){
-      shownPlans.add(i+1);
-      showPlan(p,i+1);
-    }
-  });
-  if(data.coder){
-    (data.coder.tool_runs||[]).forEach(t=>{
-      bubble(`[Coder] $ ${t.cmd}\n${t.result}`,"code",termPane);
-    });
-    if(data.coder.reply)
-      bubble(`[Coder] ${data.coder.reply}`,"ai",chatPane);
-  }
-  if(data.orchestrator){
-    (data.orchestrator.tool_runs||[]).forEach(t=>{
-      bubble(`[Orc] $ ${t.cmd}\n${t.result}`,"code",termPane);
-    });
-  }
-  (data.agents||[]).forEach(a=>{
-    const key = `${a.round}-${a.id}`;
-    if(shownAgents.has(key)) return;
-    shownAgents.add(key);
-    a.tool_runs.forEach(t=>{
-      bubble(`[A${a.id}] $ ${t.cmd}\n${t.result}`,"code",termPane);
-    });
-    bubble(`[Agent ${a.id}] ${a.reply}`,"ai",chatPane);
-  });
-  if(data.orchestrator && data.orchestrator.reply){
-    bubble(`[Orchestrator] ${data.orchestrator.reply}`,"orc",chatPane);
-  }
 }
 document.getElementById("sendChat").onclick = sendChat;
 chatInput.addEventListener("keydown", e => {

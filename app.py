@@ -216,9 +216,7 @@ def history():
     """Return full conversation history."""
     return jsonify(HISTORY)
 
-@app.route("/api/chat", methods=["POST"])
-def chat():
-    data       = request.json
+def process_chat(data: dict):
     orc_provider   = data["orc_provider"]
     coder_provider = data["coder_provider"]
     orc_model  = data["orchestrator_model"]
@@ -231,67 +229,8 @@ def chat():
     coder_client = get_client(coder_provider)
 
 
-    # HISTORY.append({"role": "user", "content": user_msg})
     add_history("user", user_msg)
 
-    # router agent 
-    # ----- quick check with coder -----
-    # coder_sys = (
-    #     "You are a quick answering **router**. "
-    #     "If the user's last message can be answered quickly or requires minimal command use, call the `route` function with "
-    #     "`{\"action\":\"answer\",\"answer\":\"…\"}`. "
-    #     "Otherwise if the task requires careful planning, multiple steps or actions call `route` with `{\"action\":\"hand_off\"}` to hand off the task to a bigger model with more tools and resources."
-    # )
-
-
-    # def quick_coder():
-    #     msgs = [{"role": "system", "content": coder_sys}] + HISTORY
-    #     t_runs = []
-    #     while True:
-    #         # r = coder_client.chat.completions.create(model=coder_model, messages=msgs, tools=TOOLS, tool_choice="auto")
-    #         r = coder_client.chat.completions.create(
-    #             model=coder_model,
-    #             messages=msgs,
-    #             tools=TOOLS + [DECISION_TOOL],
-    #             tool_choice="auto",
-    #         )
-    #         c = r.choices[0]
-    #         if c.finish_reason == "tool_calls":
-    #             msgs.append({"role": "assistant", "tool_calls": [tc.model_dump(exclude_none=True) for tc in c.message.tool_calls]})
-    #             for a in c.message.tool_calls:
-    #                 a_args = json.loads(a.function.arguments or "{}")
-    #                 log_tool_call(a.function.name, a_args)
-    #                 # res = TOOL_FUNCS[a.function.name](**a_args)
-    #                 # label = a_args.get("command") if a.function.name == "write_command" else a.function.name
-    #                 # t_runs.append({"cmd": label, "result": res})
-    #                 # msgs.append({"role": "tool", "tool_call_id": a.id, "name": label, "content": res})
-    #                 # New structured decision
-    #                 if a.function.name == "route":
-    #                     msgs.append({"role": "tool", "tool_call_id": a.id, "name": "route", "content": json.dumps(a_args)})
-    #                     if a_args.get("action") == "answer":
-    #                         return a_args.get("answer", "").strip(), t_runs, msgs
-    #                     else:  # 'orchestrate'
-    #                         return "ORCHESTRATE", t_runs, msgs
-    #
-    #                 # Existing file/command tools stay unchanged
-    #                 res = TOOL_FUNCS[a.function.name](**a_args)
-    #                 label = a_args.get("command") if a.function.name == "write_command" else a.function.name
-    #                 t_runs.append({"cmd": label, "result": res})
-    #                 msgs.append({"role": "tool", "tool_call_id": a.id, "name": label, "content": res})
-    #
-    #             continue
-    #         msgs.append({"role": "assistant", "content": c.message.content})
-    #         return c.message.content.strip(), t_runs, msgs
-    #
-    # decision, coder_runs, coder_msgs = quick_coder()
-    # print("Router decision:", decision, "Coder runs:", coder_runs)
-    # if decision.upper() != "ORCHESTRATE":
-    #     HISTORY.extend(coder_msgs)
-    #     # with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-    #     #     json.dump(HISTORY, f, ensure_ascii=False, indent=2)
-    #     flush_history_to_disk()
-    #     return jsonify({"plans": [], "coder": {"reply": decision, "tool_runs": coder_runs}, "orchestrator": None, "agents": []})
-    # ---------------- Router (decision-only) ---------------- #
     router_sys = (
         "You are a routing assistant. Decide **only** whether the last user "
         "message should be handled directly by the lightweight coder model "
@@ -311,7 +250,6 @@ def chat():
     decision = decision_args.get("action", "hand_off")
 
 
-    # If the lightweight coder should answer immediately or the orchestrator is disabled
     if decision == "answer" or not orc_enabled:
         target_client = coder_client if decision == "answer" else orc_client
         target_model = coder_model if decision == "answer" else orc_model
@@ -351,33 +289,16 @@ def chat():
 
         add_history("assistant", final_answer)
         flush_history_to_disk()
-        if decision == "answer":
-            return jsonify(
-                {
-                    "plans": [],
-                    "coder": {"reply": final_answer, "tool_runs": coder_tool_runs},
-                    "orchestrator": None,
-                    "agents": [],
-                }
-            )
-        else:
-            return jsonify(
-                {
-                    "plans": [],
-                    "coder": None,
-                    "orchestrator": {"reply": final_answer, "tool_runs": coder_tool_runs},
-                    "agents": [],
-                }
-            )
-    # ----- ask orchestrator for a plan -----
+        result = {
+            "plans": [],
+            "coder": {"reply": final_answer, "tool_runs": coder_tool_runs} if decision == "answer" else None,
+            "orchestrator": {"reply": final_answer, "tool_runs": coder_tool_runs} if decision != "answer" else None,
+            "agents": [],
+        }
+        socketio.emit('final', result)
+        return result
+
     planner_sys = (
-        # "You are an orchestrator. Coder agents are independent and share no "
-        # "memory. Each agent only sees its own task list. You have up to %d "
-        # "workers available and must never exceed this number. "
-        # "When assigning "
-        # "tasks do not rely on one agent continuing work of another unless you "
-        # "explicitly provide the previous results. Respond ONLY with JSON like: "
-        # "{\"agents\":N,\"tasks\":[{\"agent\":1,\"desc\":\"task\"}]}"
         " You are a code super agent and have the ability to orchestrate multiple smaller agents. "
         " Your overall job is to guide the process and assign super specific tasks to smaller agents. "
         " You can do this by assigning tasks to individual agents or you can execute commands on your own (the smaller agents can also execute the same commands like writing, reading and chaning files). "
@@ -385,12 +306,13 @@ def chat():
         " Right now you can have up to %d workers for 1 iteration. "
         " When you spawn a new agent it has no memory of previous tasks so you should give it a detailed prompt and list what it needs to do. "
         " Your agents work in parallel and can execute tasks independently but that can lead to a conflict when working on the same file so you should avoid that. "
-        " You also have the ability to execute more iterations after one is compelte - if a process requires more steps than your available workers or needs something to be done in sequence, you can do that by creating agents after you got feedback from the previous ones.\n\n "
+        " You also have the ability to execute more iterations after one is complete - if a process requires more steps than your available workers or needs something to be done in sequence, you can do that by creating agents after you got feedback from the previous ones.\n\n "
         "When assigning tasks do not rely on one agent continuing work of another unless you "
         "explicitly provide the previous results. Respond ONLY with JSON like: "
         "{\"agents\":N,\"tasks\":[{\"agent\":1,\"desc\":\"task\"}]}"
         " This is the history of the conversation so far: \n"
     ) % workers
+
     plan_schema = {
         "type": "object",
         "properties": {
@@ -410,7 +332,6 @@ def chat():
         "required": ["agents", "tasks"],
     }
 
-
     plan_tool = {
         "type": "function",
         "function": {
@@ -419,6 +340,7 @@ def chat():
             "parameters": plan_schema,
         },
     }
+
     orc_messages = [{"role": "system", "content": planner_sys}] + HISTORY
     orc_tool_runs: list[dict] = []
     final_reply = ""
@@ -445,19 +367,13 @@ def chat():
             msgs.append({"role": "assistant", "content": c.message.content})
             return {"id": aid, "reply": c.message.content, "tool_runs": t_runs, "messages": msgs, "round": round_no}
 
-
     while True:
-        print("\n\n\n")
-        print(f"Round {round_no} messages: {orc_messages}")
         resp = orc_client.chat.completions.create(
             model=orc_model,
             messages=orc_messages,
             tools=TOOLS + [plan_tool],
             tool_choice="auto",
         )
-        print("\n\n\n")
-        print(f"Round {round_no} response: {resp}")
-        print("\n\n\n")
         plan_text = "{}"
         plan = {"agents": 0, "tasks": []}
         choice = resp.choices[0]
@@ -490,7 +406,6 @@ def chat():
                             results = [f.result() for f in futs]
                         for r in results:
                             all_agents.append(r)
-                            # HISTORY.extend(r["messages"])
                             add_history("assistant", r["reply"])
                             socketio.emit('agent_result', {
                                 'id': r['id'], 'reply': r['reply'],
@@ -528,7 +443,6 @@ def chat():
                     results = [f.result() for f in futs]
                 for r in results:
                     all_agents.append(r)
-                    # HISTORY.extend(r["messages"])
                     add_history("assistant", r["reply"])
                     socketio.emit('agent_result', {
                         'id': r['id'], 'reply': r['reply'],
@@ -544,21 +458,23 @@ def chat():
         orc_messages.append({"role": "assistant", "content": text})
         break
 
-    # HISTORY.append({"role": "assistant", "content": "\n".join(all_plans)})
     add_history("assistant", "\n".join(all_plans))
     if final_reply:
-        # HISTORY.append({"role": "assistant", "content": final_reply})
         add_history("assistant", final_reply)
-    # with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-    #     json.dump(HISTORY, f, ensure_ascii=False, indent=2)
     flush_history_to_disk()
 
-    return jsonify({
+    result = {
         "plans": all_plans,
         "orchestrator": {"reply": final_reply, "tool_runs": orc_tool_runs},
-        "agents": [{"id": a["id"], "reply": a["reply"], "tool_runs": a["tool_runs"], "round": a["round"]} for a in all_agents]
-    })
-
+        "agents": [{"id": a["id"], "reply": a["reply"], "tool_runs": a["tool_runs"], "round": a["round"]} for a in all_agents],
+    }
+    socketio.emit('final', result)
+    return result
+@app.route("/api/chat", methods=["POST"])
+def chat():
+    data = request.json
+    socketio.start_background_task(process_chat, data)
+    return jsonify({"status": "processing"})
 @app.route("/api/command", methods=["POST"])
 def terminal():
     cmd   = request.json["command"]
