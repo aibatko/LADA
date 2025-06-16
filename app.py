@@ -46,9 +46,11 @@ def flush_history_to_disk() -> None:
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(HISTORY, f, ensure_ascii=False, indent=2)
 # ---------- helpers ---------- #
-def get_client(provider: str):
+def get_client(provider: str, token: str | None = None):
     if provider.lower() == "ollama":
         return OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
+    if token:
+        return OpenAI(api_key=token)
     return OpenAI()
 
 ROOT_DIR = pathlib.Path.cwd().resolve()
@@ -225,10 +227,11 @@ def chat():
     coder_model= data["coder_model"]
     workers    = int(data.get("workers", 2))
     orc_enabled = data.get("orc_enabled", True)
+    api_token   = data.get("api_token")
     user_msg   = data["prompt"]
 
-    orc_client   = get_client(orc_provider)
-    coder_client = get_client(coder_provider)
+    orc_client   = get_client(orc_provider, api_token)
+    coder_client = get_client(coder_provider, api_token)
 
 
     # HISTORY.append({"role": "user", "content": user_msg})
