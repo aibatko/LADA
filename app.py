@@ -269,23 +269,19 @@ def run_chat_logic(data: dict) -> dict:
         add_history("assistant", final_answer)
         flush_history_to_disk()
         if decision == "answer":
-            return jsonify(
-                {
-                    "plans": [],
-                    "coder": {"reply": final_answer, "tool_runs": coder_tool_runs},
-                    "orchestrator": None,
-                    "agents": [],
-                }
-            )
+            return {
+                "plans": [],
+                "coder": {"reply": final_answer, "tool_runs": coder_tool_runs},
+                "orchestrator": None,
+                "agents": [],
+            }
         else:
-            return jsonify(
-                {
-                    "plans": [],
-                    "coder": None,
-                    "orchestrator": {"reply": final_answer, "tool_runs": coder_tool_runs},
-                    "agents": [],
-                }
-            )
+            return {
+                "plans": [],
+                "coder": None,
+                "orchestrator": {"reply": final_answer, "tool_runs": coder_tool_runs},
+                "agents": [],
+            }
     planner_sys = (
         " You are a code super agent and have the ability to orchestrate multiple smaller agents. "
         " Your overall job is to guide the process and assign super specific tasks to smaller agents. "
