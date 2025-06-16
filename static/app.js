@@ -10,6 +10,37 @@ orcToggle.onclick = () => {
   orcToggle.textContent = `Orchestrator ${orcEnabled ? 'ON' : 'OFF'}`;
 };
 
+/* ---------- SETTINGS ---------- */
+const settingsBtn   = document.getElementById("settingsBtn");
+const settingsMenu  = document.getElementById("settingsMenu");
+const apiTokenField = document.getElementById("apiTokenField");
+const termToggle    = document.getElementById("termToggle");
+
+let apiToken = localStorage.getItem("apiToken") || "";
+apiTokenField.value = apiToken;
+apiTokenField.addEventListener("input", () => {
+  apiToken = apiTokenField.value.trim();
+  localStorage.setItem("apiToken", apiToken);
+});
+
+let showTerminal = localStorage.getItem("showTerminal");
+if(showTerminal === null) showTerminal = "true";
+showTerminal = showTerminal === "true";
+termToggle.checked = showTerminal;
+function updateTerminalVisibility(){
+  const show = termToggle.checked;
+  termPane.style.display = show ? "" : "none";
+  document.getElementById("cmdInput").style.display = show ? "" : "none";
+  document.getElementById("sendCmd").style.display = show ? "" : "none";
+  localStorage.setItem("showTerminal", show);
+}
+termToggle.onchange = updateTerminalVisibility;
+updateTerminalVisibility();
+
+settingsBtn.onclick = () => {
+  settingsMenu.style.display = settingsMenu.style.display === "block" ? "none" : "block";
+};
+
 socket.on('plan', d => {
   if(!shownPlans.has(d.round)){
     shownPlans.add(d.round);
@@ -43,6 +74,7 @@ async function loadHistory(){
 loadHistory();
 
 async function post(url, body){
+  if(apiToken) body.api_token = apiToken;
   const r = await fetch(url,{
       method:"POST",
       headers:{ "Content-Type":"application/json" },
