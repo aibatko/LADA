@@ -8,7 +8,9 @@ import concurrent.futures
 from openai import OpenAI
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
-socketio = SocketIO(app, cors_allowed_origins="*")
+# Use the builtin threading mode so that Socket.IO works out of the box
+# without requiring eventlet/gevent in local environments.
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 HISTORY_FILE = "../history.json"
 USE_SESSION_HISTORY = False
