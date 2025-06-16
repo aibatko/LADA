@@ -309,6 +309,7 @@ def chat():
         tools=[DECISION_TOOL],
         tool_choice={"type": "function", "function": {"name": "route"}},
     )
+    print("Router response:", router_resp)
     router_call = router_resp.choices[0].message.tool_calls[0]
     decision_args = json.loads(router_call.function.arguments or "{}")
     decision = decision_args.get("action", "hand_off")
