@@ -49,6 +49,7 @@ main{
 .user {align-self:flex-end;background:rgba(240,171,252,.2)}
 .code {color:var(--term)}
 .orc  {background:rgba(248,227,107,.2)}
+#orcToggle{margin-bottom:0.5rem}
 footer{display:grid;grid-template-columns:1fr auto 1fr auto;gap:0.5rem;padding:1rem;background:#0b1220}
 textarea{resize:none;height:3rem}
 

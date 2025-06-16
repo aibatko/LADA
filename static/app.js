@@ -3,6 +3,12 @@ const termPane = document.getElementById("termPane");
 const socket = window.io ? io() : { on: ()=>{}, emit: ()=>{} };
 const shownPlans = new Set();
 const shownAgents = new Set();
+let orcEnabled = true;
+const orcToggle = document.getElementById("orcToggle");
+orcToggle.onclick = () => {
+  orcEnabled = !orcEnabled;
+  orcToggle.textContent = `Orchestrator ${orcEnabled ? 'ON' : 'OFF'}`;
+};
 
 socket.on('plan', d => {
   if(!shownPlans.has(d.round)){
@@ -79,7 +85,8 @@ async function sendChat(){
     coder_provider: document.getElementById("coderProvider").value,
     orchestrator_model: document.getElementById("orcModel").value,
     coder_model:        document.getElementById("coderModel").value,
-    workers: parseInt(document.getElementById("workers").value,10)
+    workers: parseInt(document.getElementById("workers").value,10),
+    orc_enabled: orcEnabled
   });
 
   (data.plans||[]).forEach((p,i)=>{
