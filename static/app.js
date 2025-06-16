@@ -26,6 +26,27 @@ socket.on('agent_result', a => {
   });
   bubble(`[Agent ${a.id}] ${a.reply}`, 'ai', chatPane);
 });
+socket.on('chat_done', d => {
+  // coder section (if decision == "answer")
+  if (d.coder) {
+    d.coder.tool_runs?.forEach(t =>
+      bubble(`[Coder] $ ${t.cmd}\n${t.result}`, 'code', termPane));
+    if (d.coder.reply) bubble(`[Coder] ${d.coder.reply}`, 'ai', chatPane);
+  }
+  // orchestrator summary
+  d.orchestrator?.tool_runs?.forEach(t =>
+      bubble(`[Orc] $ ${t.cmd}\n${t.result}`, 'code', termPane));
+  if (d.orchestrator?.reply)
+      bubble(`[Orchestrator] ${d.orchestrator.reply}`, 'orc', chatPane);
+  // agent results (repeat filter just in case)
+  d.agents?.forEach(a => {
+    const key = `${a.round}-${a.id}`; if (shownAgents.has(key)) return;
+    shownAgents.add(key);
+    a.tool_runs.forEach(t =>
+      bubble(`[A${a.id}] $ ${t.cmd}\n${t.result}`, 'code', termPane));
+    bubble(`[Agent ${a.id}] ${a.reply}`, 'ai', chatPane);
+  });
+});
 
 async function loadHistory(){
   const r = await fetch("/api/history");
@@ -79,15 +100,25 @@ async function sendChat(){
   const msg = chatInput.value.trim(); if(!msg) return;
   bubble(msg,"user",chatPane); chatInput.value="";
 
-  const data = await post("/api/chat",{
-    prompt:  msg,
-    orc_provider:   document.getElementById("orcProvider").value,
-    coder_provider: document.getElementById("coderProvider").value,
-    orchestrator_model: document.getElementById("orcModel").value,
-    coder_model:        document.getElementById("coderModel").value,
-    workers: parseInt(document.getElementById("workers").value,10),
-    orc_enabled: orcEnabled
-  });
+  // const data = await post("/api/chat",{
+  //   prompt:  msg,
+  //   orc_provider:   document.getElementById("orcProvider").value,
+  //   coder_provider: document.getElementById("coderProvider").value,
+  //   orchestrator_model: document.getElementById("orcModel").value,
+  //   coder_model:        document.getElementById("coderModel").value,
+  //   workers: parseInt(document.getElementById("workers").value,10),
+  //   orc_enabled: orcEnabled
+  // });
+  await post("/api/chat",{
+			prompt:  msg,
+			orc_provider:   document.getElementById("orcProvider").value,
+			coder_provider: document.getElementById("coderProvider").value,
+			orchestrator_model: document.getElementById("orcModel").value,
+			coder_model:        document.getElementById("coder_model").value,
+			workers: parseInt(document.getElementById("workers").value,10),
+			orc_enabled: orcEnabled
+	});
+
 
   (data.plans||[]).forEach((p,i)=>{
     if(!shownPlans.has(i+1)){
