@@ -26,6 +26,12 @@ socket.on('agent_result', a => {
   });
   bubble(`[Agent ${a.id}] ${a.reply}`, 'ai', chatPane);
 });
+socket.on('orc_tool', t => {
+  bubble(`[Orc] $ ${t.cmd}\n${t.result}`, 'code', termPane);
+});
+socket.on('agent_tool', t => {
+  bubble(`[A${t.id}] $ ${t.cmd}\n${t.result}`, 'code', termPane);
+});
 socket.on('chat_done', d => {
   // coder section (if decision == "answer")
   if (d.coder) {

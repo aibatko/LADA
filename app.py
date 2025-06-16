@@ -349,6 +349,10 @@ def run_chat_logic(data: dict) -> dict:
                     t_runs.append({"cmd": label, "result": res})
                     msgs.append({"role": "assistant", "tool_calls": [a.model_dump(exclude_none=True)]})
                     msgs.append({"role": "tool", "tool_call_id": a.id, "name": label, "content": res})
+                    socketio.emit('agent_tool', {
+                        'id': aid, 'cmd': label, 'result': res, 'round': round_no
+                    })
+                    socketio.sleep(0)
                 continue
             msgs.append({"role": "assistant", "content": c.message.content})
             return {"id": aid, "reply": c.message.content, "tool_runs": t_runs, "messages": msgs, "round": round_no}
@@ -413,6 +417,8 @@ def run_chat_logic(data: dict) -> dict:
                     label = args.get("command") if call.function.name == "write_command" else call.function.name
                     orc_tool_runs.append({"cmd": label, "result": res})
                     orc_messages.append({"role": "tool", "tool_call_id": call.id, "name": label, "content": res})
+                    socketio.emit('orc_tool', {'cmd': label, 'result': res, 'round': round_no})
+                    socketio.sleep(0)
             continue
 
         text = choice.message.content or ""
